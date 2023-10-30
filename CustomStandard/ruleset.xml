@@ -1,4 +1,4 @@
 <?xml version="1.0"?>
-<ruleset name="MyStandard">
+<ruleset name="CustomStandard">
     <description>A custom coding standard.</description>
 </ruleset>
