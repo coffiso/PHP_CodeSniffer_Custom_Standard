@@ -5,7 +5,10 @@ namespace CustomStandard\Sniffs\Functions;
 use PHP_CodeSniffer\Files\File;
 use PHP_CodeSniffer\Sniffs\Sniff;
 
-class RequireClosureArgumentTypeHintSniff implements Sniff
+/**
+ * 無名関数の引数にタイプヒントを強制するルール
+ */
+final class RequireClosureArgumentTypeHintSniff implements Sniff
 {
     public function register()
     {
