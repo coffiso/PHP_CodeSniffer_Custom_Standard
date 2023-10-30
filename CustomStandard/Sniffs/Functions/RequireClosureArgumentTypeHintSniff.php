@@ -64,7 +64,7 @@ class RequireClosureArgumentTypeHintSniff implements Sniff
                 $phpcsFile->addError(
                     "Requires type definition for argument %s",
                     $param["token"],
-                    "RequireClosureArgumentTypeHint",
+                    "RequireTypeHint",
                     [$param["name"]],
                 );
             }
