@@ -23,6 +23,10 @@ final class HeredocQuotesSniff implements Sniff
         $tokens = $phpcsFile->getTokens();
         $token = $tokens[$stackPtr];
         if ((bool)preg_match("/[a-zA-Z_][a-zA-Z0-9_]+/", $token["content"], $matches) === true) {
+            if ($matches[0] === "EOL" || $matches[0] === "SQL") {
+                return;
+            }
+
             $phpcsFile->addError(
                 "The quoting identifier for the heredoc expects \"SQL\" or \"EOL\" but found \"%s\"",
                 $stackPtr,
