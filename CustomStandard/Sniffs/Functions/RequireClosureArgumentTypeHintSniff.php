@@ -8,18 +8,15 @@ use PHP_CodeSniffer\Sniffs\Sniff;
 /**
  * 無名関数の引数にタイプヒントを強制するルール
  */
-final class RequireClosureArgumentTypeHintSniff implements Sniff
-{
-    public function register()
-    {
+class RequireClosureArgumentTypeHintSniff implements Sniff {
+    public function register() {
         return [
             T_CLOSURE,
             T_FN,
         ];
     }
 
-    public function process(File $phpcsFile, $stackPtr)
-    {
+    public function process(File $phpcsFile, $stackPtr) {
         //ファイル内で出現するトークン全てを配列として取得する
         $tokens = $phpcsFile->getTokens();
 
@@ -44,8 +41,7 @@ final class RequireClosureArgumentTypeHintSniff implements Sniff
      *
      * @return void
      */
-    public function processBracket(File $phpcsFile, int $openBracket)
-    {
+    public function processBracket(File $phpcsFile, int $openBracket) {
         $tokens = $phpcsFile->getTokens();
 
         $stackPtr = isset($tokens[$openBracket]['parenthesis_owner']) === true

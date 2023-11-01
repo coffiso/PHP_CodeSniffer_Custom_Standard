@@ -8,17 +8,14 @@ use PHP_CodeSniffer\Sniffs\Sniff;
 /**
  * 文字列リテラルの引用符をダブルクォートに強制するルール
  */
-final class RequireDoubleQuotesSniff implements Sniff
-{
-    public function register()
-    {
+class RequireDoubleQuotesSniff implements Sniff {
+    public function register() {
         return [
             T_CONSTANT_ENCAPSED_STRING,
         ];
     }
 
-    public function process(File $phpcsFile, $stackPtr)
-    {
+    public function process(File $phpcsFile, $stackPtr) {
         $tokens = $phpcsFile->getTokens();
         $token = $tokens[$stackPtr];
         $content = $token["content"];
