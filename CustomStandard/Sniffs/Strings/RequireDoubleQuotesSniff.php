@@ -38,7 +38,7 @@ class RequireDoubleQuotesSniff implements Sniff {
             $trimmedString = substr($content, 1);
             $fix = $phpcsFile->addFixableError("Quote strings should be double quotes.", $stackPtr, "RequireDoubleQuotes");
             if ($fix === true) {
-                $phpcsFile->fixer->replaceToken($stackPtr, "\"" . $trimmedString);
+                $phpcsFile->fixer->replaceToken($stackPtr, "\"" . $this->escape($trimmedString));
             }
             return;
         }
@@ -48,7 +48,7 @@ class RequireDoubleQuotesSniff implements Sniff {
             $trimmedString = substr($content, 0, -1);
             $fix = $phpcsFile->addFixableError("Quote strings should be double quotes.", $stackPtr, "RequireDoubleQuotes");
             if ($fix === true) {
-                $phpcsFile->fixer->replaceToken($stackPtr, $trimmedString . "\"");
+                $phpcsFile->fixer->replaceToken($stackPtr, $this->escape($trimmedString) . "\"");
             }
             return;
         }
@@ -67,9 +67,13 @@ class RequireDoubleQuotesSniff implements Sniff {
         if ($firstChar === "'") {
             $fix = $phpcsFile->addFixableError("Quote strings should be double quotes.", $stackPtr, "RequireDoubleQuotes");
             if ($fix === true) {
-                $phpcsFile->fixer->replaceToken($stackPtr, "\"{$trimmedString}\"");
+                $phpcsFile->fixer->replaceToken($stackPtr, "\"" . $this->escape($trimmedString) . "\"");
             }
         }
+    }
+
+    private function escape(string $string): string {
+        return str_replace("\$", "\\\$", $string);
     }
 
 }
