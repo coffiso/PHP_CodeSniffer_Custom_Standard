@@ -73,7 +73,7 @@ class RequireDoubleQuotesSniff implements Sniff {
     }
 
     private function escape(string $string): string {
-        return str_replace("\$", "\\\$", $string);
+        return str_replace(["\$", "\""], ["\\\$", "\\\""], $string);
     }
 
 }
