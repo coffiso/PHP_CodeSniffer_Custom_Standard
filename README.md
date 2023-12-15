@@ -7,13 +7,15 @@ php_codesnifferの拡張ルール
 ## Functions
 ### CustomStandard.Functions.RequireClosureArgumentTypeHint
 無名関数の引数に型ヒントがない場合に指摘します。
+### CustomStandard.Functions.RequireClosureReturnTypeHint
+無名関数の戻り値に型ヒントがない場合に指摘します。
 
 ## Strings
 ### CustomStandard.Strings.RequireDoubleQuotes 🔧
 文字列リテラルの引用符をダブルクォート「"」に強制します。
 
 ### CustomStandard.Strings.HeredocQuotes
-ヒアドキュメントの引用符を`EOL`または`SQL`に制限します。
+ヒアドキュメントの引用符を`EOL`に制限します。
 
 ## Classes
 ### CustomStandard.Classes.ConstructorPropertyPromotion 🔧

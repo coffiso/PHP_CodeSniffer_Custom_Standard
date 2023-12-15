@@ -6,7 +6,7 @@ use PHP_CodeSniffer\Files\File;
 use PHP_CodeSniffer\Sniffs\Sniff;
 
 /**
- * ヒアドキュメント構文の引用符を"EOL"または"SQL"に強制するルール
+ * ヒアドキュメント構文の引用符を"EOL"に強制するルール
  */
 class HeredocQuotesSniff implements Sniff {
     public function register() {
@@ -20,12 +20,12 @@ class HeredocQuotesSniff implements Sniff {
         $tokens = $phpcsFile->getTokens();
         $token = $tokens[$stackPtr];
         if ((bool)preg_match("/[a-zA-Z_][a-zA-Z0-9_]+/", $token["content"], $matches) === true) {
-            if ($matches[0] === "EOL" || $matches[0] === "SQL") {
+            if ($matches[0] === "EOL") {
                 return;
             }
 
             $phpcsFile->addError(
-                "The quoting identifier for the heredoc expects \"SQL\" or \"EOL\" but found \"%s\"",
+                "The quoting identifier for the heredoc expects \"EOL\" but found \"%s\"",
                 $stackPtr,
                 "HeredocQuotes",
                 [$matches[0]]
