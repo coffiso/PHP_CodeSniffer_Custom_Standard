@@ -19,9 +19,10 @@ class ForbiddenVariadicArgumentsSniff implements Sniff {
         foreach ($functionParameters as $parameter) {
             if (is_int($parameter["variadic_token"]) === true) {
                 $phpcsFile->addError(
-                    "Variadic arguments are forbidden, use array instead.",
+                    "Variadic arguments '...' are forbidden, array is required for %s",
                     $parameter["variadic_token"],
                     "Forbidden",
+                    [$parameter["name"]],
                 );
             }
         }
