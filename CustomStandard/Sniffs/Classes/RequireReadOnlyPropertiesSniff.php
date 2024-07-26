@@ -4,6 +4,7 @@ namespace CustomStandard\Sniffs\Classes;
 
 use PHP_CodeSniffer\Files\File;
 use PHP_CodeSniffer\Sniffs\Sniff;
+use SlevomatCodingStandard\Helpers\PropertyHelper;
 
 class RequireReadOnlyPropertiesSniff implements Sniff {
     public function register() {
@@ -17,8 +18,19 @@ class RequireReadOnlyPropertiesSniff implements Sniff {
     public function process(File $phpcsFile, $stackPtr) {
         $tokens = $phpcsFile->getTokens();
         $ptr = $stackPtr + 1;
-        $varPtr = $phpcsFile->findNext(T_VARIABLE, $ptr);
-        $varName = $tokens[$varPtr]["content"];
+
+        //次に出現するトークンでインスタンスプロパティかどうかを判定する。'const'、'function'キーワードが出現したらインスタンスプロパティではないと判定する。
+        $kindPtr = $phpcsFile->findNext([T_VARIABLE, T_CONST, T_FUNCTION], $ptr);
+        if ($tokens[$kindPtr]["code"] !== T_VARIABLE) {
+            return;
+        }
+
+        //念の為プロパティかどうかを判定する
+        if (PropertyHelper::isProperty(phpcsFile: $phpcsFile, variablePointer: $kindPtr, promoted: true) === false) {
+            return;
+        }
+
+        $varName = $tokens[$kindPtr]["content"];
 
         //最初にアクセス修飾子の前方にreadonlyがないかどうかをチェックする
         while ($tokens[$ptr]["code"] !== T_STRING) {
