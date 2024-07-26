@@ -19,7 +19,7 @@ class ForbiddenDefaultArgumentValuesSniff implements Sniff {
         foreach ($functionParameters as $parameter) {
             if (is_int($parameter["default_token"] ?? null) === true) {
                 $phpcsFile->addError(
-                    "Default argument value, %s, is forbidden.",
+                    "Default argument value, %s, is forbidden. All arguments must be passed explicitly.",
                     $parameter["default_token"],
                     "Forbidden",
                     [$parameter["name"] . " = " . $parameter["default"]],
