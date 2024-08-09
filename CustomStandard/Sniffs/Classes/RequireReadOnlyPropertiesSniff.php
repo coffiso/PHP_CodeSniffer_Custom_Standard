@@ -38,6 +38,10 @@ class RequireReadOnlyPropertiesSniff implements Sniff {
                 return;
             }
 
+            if ($tokens[$ptr]["code"] === T_STATIC) {
+                return;
+            }
+
             $ptr++;
         }
 
@@ -46,6 +50,10 @@ class RequireReadOnlyPropertiesSniff implements Sniff {
         while ($tokens[$ptr]["code"] === T_WHITESPACE) {
             $ptr--;
             if ($tokens[$ptr]["code"] === T_READONLY) {
+                return;
+            }
+
+            if ($tokens[$ptr]["code"] === T_STATIC) {
                 return;
             }
         }
