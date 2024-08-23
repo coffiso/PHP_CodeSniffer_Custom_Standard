@@ -33,7 +33,7 @@ class RequireReadOnlyPropertiesSniff implements Sniff {
         $varName = $tokens[$kindPtr]["content"];
 
         //最初にアクセス修飾子の前方にreadonlyがないかどうかをチェックする
-        while ($tokens[$ptr]["code"] !== T_STRING) {
+        while (isset($tokens[$ptr]["code"]) === true && $tokens[$ptr]["code"] !== T_STRING) {
             if ($tokens[$ptr]["code"] === T_READONLY) {
                 return;
             }
@@ -47,7 +47,7 @@ class RequireReadOnlyPropertiesSniff implements Sniff {
 
         $ptr = $stackPtr - 1;
         //次にアクセス修飾子の後方にreadonlyがないかどうかをチェックする
-        while ($tokens[$ptr]["code"] === T_WHITESPACE) {
+        while (isset($tokens[$ptr]["code"]) === true && $tokens[$ptr]["code"] === T_WHITESPACE) {
             $ptr--;
             if ($tokens[$ptr]["code"] === T_READONLY) {
                 return;
