@@ -4,6 +4,7 @@ namespace CustomStandard\Sniffs\Classes;
 
 use PHP_CodeSniffer\Files\File;
 use PHP_CodeSniffer\Sniffs\Sniff;
+use SlevomatCodingStandard\Helpers\DocCommentHelper;
 use SlevomatCodingStandard\Helpers\PropertyHelper;
 
 class RequireReadOnlyPropertiesSniff implements Sniff {
@@ -27,6 +28,14 @@ class RequireReadOnlyPropertiesSniff implements Sniff {
 
         //念の為プロパティかどうかを判定する
         if (PropertyHelper::isProperty(phpcsFile: $phpcsFile, variablePointer: $kindPtr, promoted: true) === false) {
+            return;
+        }
+
+        /**
+         * 継承してプロパティをオーバーライドしており、かつ親クラスのプロパティが非readonlyな場合、サブクラス側でreadonlyを指定できないため、
+         * PHPDocに`inheritDoc`アノテーションが存在する場合はオーバーライドしたプロパティとみなし、エラーを発生させない。
+         */
+        if (DocCommentHelper::hasInheritdocAnnotation($phpcsFile, $kindPtr) === true) {
             return;
         }
 
@@ -59,7 +68,7 @@ class RequireReadOnlyPropertiesSniff implements Sniff {
         }
 
         $phpcsFile->addError(
-            "'readonly' modifier is required for %s",
+            "'readonly' modifier is required for %s. Or did you forget '{@inheritDoc}'?",
             $stackPtr,
             "RequireReadOnlyProperties",
             [$varName]
