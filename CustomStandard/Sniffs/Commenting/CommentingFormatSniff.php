@@ -258,7 +258,7 @@ class CommentingFormatSniff implements Sniff {
                     if ($fix === true) {
                         $phpcsFile->fixer->beginChangeset();
                         $phpcsFile->fixer->replaceToken($stackPtr, "");
-                        $phpcsFile->fixer->replaceToken($stackPtr + 1, "{$baseIndent}// " . ltrim($tokens[$stackPtr + 1]["content"], "* "));
+                        $phpcsFile->fixer->replaceToken($stackPtr + 1, "// " . ltrim($tokens[$stackPtr + 1]["content"], "* "));
                         $phpcsFile->fixer->replaceToken($commentEndPtr, "");
                         $phpcsFile->fixer->replaceToken($commentEndPtr + 1, "");
                         $phpcsFile->fixer->endChangeset();
