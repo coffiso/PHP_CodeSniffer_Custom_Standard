@@ -19,7 +19,7 @@ class RequireClosureReturnTypeHintSniff implements Sniff {
         $returnTypeHint = FunctionHelper::findReturnTypeHint($phpcsFile, $stackPtr);
         if ($returnTypeHint === null) {
             $phpcsFile->addError(
-                "Requires type hint for return value.",
+                "Requires type hint for return value of anonymous function.",
                 $stackPtr,
                 "RequireTypeHint"
             );
