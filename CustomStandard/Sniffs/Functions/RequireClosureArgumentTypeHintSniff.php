@@ -61,7 +61,7 @@ class RequireClosureArgumentTypeHintSniff implements Sniff {
             //引数に型定義が無い時にエラーを追加
             if ($hasTypeHint === false) {
                 $phpcsFile->addError(
-                    "Requires type definition for argument %s",
+                    "Requires type definition for argument %s in anonymous function.",
                     $param["token"],
                     "RequireTypeHint",
                     [$param["name"]],
