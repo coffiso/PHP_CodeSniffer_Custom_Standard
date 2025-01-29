@@ -83,7 +83,7 @@ class CommentingFormatSniff implements Sniff {
                 foreach ($fixTargetTokens as $index => $token) {
                     $body = (function () use ($fixTargetTokens, $index, $token): string {
                         if ($index === 0) {
-                            return "/*\n * {$token["body"]}\n";
+                            return "/**\n * {$token["body"]}\n";
                         }
 
                         if ($index === array_key_last($fixTargetTokens)) {
@@ -185,7 +185,7 @@ class CommentingFormatSniff implements Sniff {
                         if ($fix === true) {
                             $text = trim($matches[1] ?? "");
                             // 開始タグのみ、空白が含まれないので基準インデントは次の行から適用している。
-                            $fixedContent = $text === "" ? "/*\n" : "/*\n{$baseIndent} * {$text}\n";
+                            $fixedContent = $text === "" ? "/**\n" : "/**\n{$baseIndent} * {$text}\n";
                             $phpcsFile->fixer->replaceToken($currentPtr, $fixedContent);
                         }
                     }
@@ -254,20 +254,6 @@ class CommentingFormatSniff implements Sniff {
                 }
             }
 
-            // 宣言構文に対するコメントの場合、コメント形式をPHPDoc形式に変換する
-            if ($this->isCommentForStructure($phpcsFile, $commentEndPtr) === true) {
-                $fix = $phpcsFile->addFixableError(
-                    self::ERROR_MESSAGE,
-                    $stackPtr,
-                    "InvalidCommentFormat"
-                );
-                if ($fix === true) {
-                    $phpcsFile->fixer->replaceToken($stackPtr, "/**\n");
-                }
-
-                return;
-            }
-
             // 複数行コメント形式だが本文が1行しかない場合、1行コメント形式に変換する
             if ($commentEndPtr - $stackPtr === 2) {
                 $fix = $phpcsFile->addFixableError(
@@ -284,6 +270,18 @@ class CommentingFormatSniff implements Sniff {
                     $phpcsFile->fixer->replaceToken($commentEndPtr + 1, "");
                     $phpcsFile->fixer->endChangeset();
                 }
+
+                return;
+            }
+
+            // 複数行コメントは常にPHPDoc形式に統一する
+            $fix = $phpcsFile->addFixableError(
+                self::ERROR_MESSAGE,
+                $stackPtr,
+                "InvalidCommentFormat"
+            );
+            if ($fix === true) {
+                $phpcsFile->fixer->replaceToken($stackPtr, "/**\n");
             }
         }
     }
@@ -376,9 +374,6 @@ class CommentingFormatSniff implements Sniff {
 
         $formattedDocCommentTokens[$index]["lineContent"] = $line;
 
-        $hasAnnotations = count(
-                array_filter($docCommentTokens, fn(array $token): bool => str_contains($token["content"], "@") === true)
-            ) > 0;
         foreach ($formattedDocCommentTokens as $index => $token) {
 
             $currentContent = $token["lineContent"];
@@ -399,20 +394,12 @@ class CommentingFormatSniff implements Sniff {
                     if ($fix === true) {
                         $text = trim($matches[1]);
                         // 開始タグのみ、空白が含まれないので基準インデントは次の行から適用している。
-                        $fixedContent = (function () use ($text, $baseIndent, $hasAnnotations): string {
+                        $fixedContent = (function () use ($text, $baseIndent): string {
                             if ($text === "") {
-                                if ($hasAnnotations === true) {
-                                    return "/**\n";
-                                }
-
-                                return "/*\n";
+                                return "/**\n";
                             }
 
-                            if ($hasAnnotations === true) {
-                                return "/**\n{$baseIndent} * {$text}\n";
-                            }
-
-                            return "/*\n{$baseIndent} * {$text}\n";
+                            return "/**\n{$baseIndent} * {$text}\n";
                         })();
 
                         $this->replaceLineTokens(
@@ -424,28 +411,6 @@ class CommentingFormatSniff implements Sniff {
                     }
 
                     continue;
-                }
-
-                /*
-                 * PHPDocコメントにアノテーションが含まれていない場合は
-                 * PHPDoc形式である必要が無いので通常のコメント形式に変換する。
-                 * 宣言構文に対するコメントの場合は、変換しない。
-                 */
-                if ($hasAnnotations === false && $this->isCommentForStructure($phpcsFile, $closeTagPtr) === false) {
-                    $fix = $phpcsFile->addFixableError(
-                        self::ERROR_MESSAGE,
-                        $beginPtr,
-                        "InvalidCommentFormat"
-                    );
-
-                    if ($fix === true) {
-                        $this->replaceLineTokens(
-                            phpcsFile: $phpcsFile,
-                            beginPtr: $beginPtr,
-                            endPtr: $endPtr,
-                            replacement: "/*\n",
-                        );
-                    }
                 }
 
                 continue;
