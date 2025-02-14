@@ -5,6 +5,7 @@ namespace CustomStandard\Sniffs\Commenting;
 use PHP_CodeSniffer\Files\File;
 use PHP_CodeSniffer\Sniffs\Sniff;
 use SlevomatCodingStandard\Helpers\CommentHelper;
+use SlevomatCodingStandard\Helpers\PropertyHelper;
 use SlevomatCodingStandard\Helpers\TokenHelper;
 
 class CommentingFormatSniff implements Sniff {
@@ -301,6 +302,62 @@ class CommentingFormatSniff implements Sniff {
             preserve_keys: true
         );
 
+        // プロパティに対するコメントの場合、コメント内に冗長なプロパティ名が含まれているかどうかをチェックする
+        (function () use ($stackPtr, $docCommentTokens, $closeTagLine, $tokens, $phpcsFile): void {
+
+            $concatenatedDocCommentContent = join(
+                array_map(
+                    fn(array $token): string => $token["content"],
+                    $docCommentTokens
+                )
+            );
+            // docコメントの内容に@varタグが存在しない場合はプロパティに対するコメントとみなさないので処理しない
+            if (str_contains($concatenatedDocCommentContent, "@var") === false) {
+                return;
+            }
+
+            $variablePtr = $phpcsFile->findNext(T_VARIABLE, $stackPtr + 1);
+            $variableToken = $tokens[$variablePtr];
+
+            // コメント終了タグの次の行にプロパティが存在する場合はプロパティに対するコメントとみなす
+            if ($closeTagLine === $variableToken["line"] - 1 && PropertyHelper::isProperty($phpcsFile, $variablePtr) === true) {
+
+                // プロパティの変数文字列
+                $variableContent = $variableToken["content"];
+
+                $docCommentVariableTokenIndex = null;
+                // docコメント内の変数名が出現するインデックスを探す
+                foreach ($docCommentTokens as $index => $docCommentToken) {
+                    if ($docCommentToken["code"] === T_DOC_COMMENT_STRING
+                        && str_contains($docCommentToken["content"], $variableContent) === true) {
+                        $docCommentVariableTokenIndex = $index;
+                        break;
+                    }
+                }
+
+                if ($docCommentVariableTokenIndex === null) {
+                    return;
+                }
+
+                $docCommentVariableContent = $docCommentTokens[$docCommentVariableTokenIndex]["content"];
+
+                // docコメント内の変数名を除去する
+                $commentStringContent = preg_replace("/\s*\\{$variableContent}/", "", $docCommentVariableContent);
+                if ($commentStringContent === $docCommentVariableContent) {
+                    return;
+                }
+
+                $fix = $phpcsFile->addFixableError(
+                    self::ERROR_MESSAGE,
+                    $stackPtr,
+                    "InvalidCommentFormat"
+                );
+                if ($fix === true) {
+                    $phpcsFile->fixer->replaceToken($docCommentVariableTokenIndex, $commentStringContent);
+                }
+            }
+        })();
+
         // 1行コメント形式の場合
         if ($openTagLine === $closeTagLine) {
             $content = join(
@@ -352,7 +409,7 @@ class CommentingFormatSniff implements Sniff {
             return;
         }
 
-        /*
+        /**
          * 開始タグの前のトークンが空白の場合、インデントされているはずなのでこれを基準インデントとして設定し、
          * コメント行全体にこのインデントを挿入して整形する。
          */
