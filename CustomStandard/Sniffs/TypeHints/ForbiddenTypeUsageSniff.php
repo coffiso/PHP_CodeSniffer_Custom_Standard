@@ -260,7 +260,10 @@ final class ForbiddenTypeUsageSniff implements Sniff
 
                 // 禁止型かどうかをチェック
                 if (isset($this->forbiddenTypes[$normalizedTypeName])) {
-                    self::$error = ['message' => "Type '{$normalizedTypeName}' is forbidden.", 'stackPtr' => $stackPtr, 'code' => 'ForbiddenTypeUsage'];
+                    $message = $this->forbiddenTypes[$normalizedTypeName] === ''
+                        ? "Type '{$normalizedTypeName}' is forbidden."
+                        : $this->forbiddenTypes[$normalizedTypeName];
+                    self::$error = ['message' => $message, 'stackPtr' => $stackPtr, 'code' => 'ForbiddenTypeUsage'];
                 }
             } else {
                 // 部分修飾名の場合：use文を考慮した解決を行う
@@ -268,9 +271,15 @@ final class ForbiddenTypeUsageSniff implements Sniff
 
                 // 禁止型かどうかをチェック（元の名前と解決後の名前の両方）
                 if (isset($this->forbiddenTypes[$resolvedTypeName])) {
-                    self::$error = ['message' => "Type '{$resolvedTypeName}' is forbidden.", 'stackPtr' => $stackPtr, 'code' => 'ForbiddenTypeUsage'];
+                    $message = $this->forbiddenTypes[$resolvedTypeName] === ''
+                        ? "Type '{$resolvedTypeName}' is forbidden."
+                        : $this->forbiddenTypes[$resolvedTypeName];
+                    self::$error = ['message' => $message, 'stackPtr' => $stackPtr, 'code' => 'ForbiddenTypeUsage'];
                 } elseif (isset($this->forbiddenTypes[$typeName])) {
-                    self::$error = ['message' => "Type '{$resolvedTypeName}' is forbidden.", 'stackPtr' => $stackPtr, 'code' => 'ForbiddenTypeUsage'];
+                    $message = $this->forbiddenTypes[$typeName] === ''
+                        ? "Type '{$resolvedTypeName}' is forbidden."
+                        : $this->forbiddenTypes[$typeName];
+                    self::$error = ['message' => $message, 'stackPtr' => $stackPtr, 'code' => 'ForbiddenTypeUsage'];
                 }
             }
         }
@@ -385,11 +394,20 @@ final class ForbiddenTypeUsageSniff implements Sniff
 
         // 禁止型かどうかをチェック（優先順位：FQN > 解決された型名 > 短縮型名）
         if ($fullTypeName && isset($this->forbiddenTypes[$fullTypeName])) {
-            self::$error = ['message' => "Type '{$resolvedTypeName}' is forbidden.", 'stackPtr' => $tokenPtr, 'code' => 'ForbiddenTypeUsage'];
+            $message = $this->forbiddenTypes[$fullTypeName] === ''
+                ? "Type '{$resolvedTypeName}' is forbidden."
+                : $this->forbiddenTypes[$fullTypeName];
+            self::$error = ['message' => $message, 'stackPtr' => $tokenPtr, 'code' => 'ForbiddenTypeUsage'];
         } elseif ($resolvedTypeName && isset($this->forbiddenTypes[$resolvedTypeName])) {
-            self::$error = ['message' => "Type '{$resolvedTypeName}' is forbidden.", 'stackPtr' => $tokenPtr, 'code' => 'ForbiddenTypeUsage'];
+            $message = $this->forbiddenTypes[$resolvedTypeName] === ''
+                ? "Type '{$resolvedTypeName}' is forbidden."
+                : $this->forbiddenTypes[$resolvedTypeName];
+            self::$error = ['message' => $message, 'stackPtr' => $tokenPtr, 'code' => 'ForbiddenTypeUsage'];
         } elseif (isset($this->forbiddenTypes[$shortTypeName])) {
-            self::$error = ['message' => "Type '{$resolvedTypeName}' is forbidden.", 'stackPtr' => $tokenPtr, 'code' => 'ForbiddenTypeUsage'];
+            $message = $this->forbiddenTypes[$shortTypeName] === ''
+                ? "Type '{$resolvedTypeName}' is forbidden."
+                : $this->forbiddenTypes[$shortTypeName];
+            self::$error = ['message' => $message, 'stackPtr' => $tokenPtr, 'code' => 'ForbiddenTypeUsage'];
         }
     }
 
