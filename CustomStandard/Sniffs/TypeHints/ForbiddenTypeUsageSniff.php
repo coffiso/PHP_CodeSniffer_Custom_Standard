@@ -26,6 +26,10 @@ final class ForbiddenTypeUsageSniff implements Sniff
      */
     public array $forbiddenTypes = [];
 
+    private static array $error = [];
+
+
+
     /**
      * 検知対象のトークン一覧
      *
@@ -33,13 +37,29 @@ final class ForbiddenTypeUsageSniff implements Sniff
      */
     public function register(): array
     {
-        return [
+        $tokens = [
             T_FUNCTION,      // 関数・メソッド
             T_VARIABLE,      // プロパティ（型宣言付き）
             T_FN,           // Arrow関数
-            T_CLOSURE,      // クロージャ
             T_STRING,       // 型名（FQN対応のため追加）
         ];
+
+        // T_CLOSURE が定義されている場合に追加（古いPHPバージョン対応）
+        if (defined('T_CLOSURE')) {
+            $tokens[] = T_CLOSURE;
+        }
+
+        // PHP 8.0+ では完全修飾名は T_NAME_FULLY_QUALIFIED として単一トークンになる
+        if (defined('T_NAME_FULLY_QUALIFIED')) {
+            $tokens[] = T_NAME_FULLY_QUALIFIED;
+        }
+
+        // PHP 8.0+ では部分修飾名は T_NAME_QUALIFIED として単一トークンになる
+        if (defined('T_NAME_QUALIFIED')) {
+            $tokens[] = T_NAME_QUALIFIED;
+        }
+
+        return $tokens;
     }
 
     /**
@@ -54,11 +74,43 @@ final class ForbiddenTypeUsageSniff implements Sniff
         $token = $tokens[$stackPtr];
 
         match ($token['code']) {
-            T_FUNCTION, T_FN, T_CLOSURE => $this->processFunctionLike($phpcsFile, $stackPtr),
+            T_FUNCTION, T_FN => $this->processFunctionLike($phpcsFile, $stackPtr),
             T_VARIABLE => $this->processProperty($phpcsFile, $stackPtr),
             T_STRING => $this->processStringToken($phpcsFile, $stackPtr),
-            default => null,
+            default => $this->processOtherTokens($phpcsFile, $stackPtr, $token),
         };
+
+        if (self::$error !== []) {
+            $phpcsFile->addError(
+                (self::$error['message'] === '' || self::$error['message'] === null) ? 'Forbidden type found.' : self::$error['message'],
+                self::$error['stackPtr'],
+                self::$error['code']
+            );
+        }
+    }
+
+    /**
+     * その他のトークンを処理（T_NAME_FULLY_QUALIFIED、T_NAME_QUALIFIED、T_CLOSURE等）
+     */
+    private function processOtherTokens(File $phpcsFile, int $stackPtr, array $token): void
+    {
+        // T_CLOSURE が定義されていて、そのトークンの場合
+        if (defined('T_CLOSURE') && $token['code'] === T_CLOSURE) {
+            $this->processFunctionLike($phpcsFile, $stackPtr);
+            return;
+        }
+
+        // T_NAME_FULLY_QUALIFIED が定義されていて、そのトークンの場合
+        if (defined('T_NAME_FULLY_QUALIFIED') && $token['code'] === T_NAME_FULLY_QUALIFIED) {
+            $this->processQualifiedName($phpcsFile, $stackPtr, true);
+            return;
+        }
+
+        // T_NAME_QUALIFIED が定義されていて、そのトークンの場合
+        if (defined('T_NAME_QUALIFIED') && $token['code'] === T_NAME_QUALIFIED) {
+            $this->processQualifiedName($phpcsFile, $stackPtr, false);
+            return;
+        }
     }
 
     /**
@@ -168,7 +220,59 @@ final class ForbiddenTypeUsageSniff implements Sniff
     private function processStringToken(File $phpcsFile, int $stackPtr): void
     {
         if ($this->isInTypeDeclarationContext($phpcsFile, $stackPtr)) {
-            $this->checkTypeToken($phpcsFile, $stackPtr, 'type declaration');
+            // FQNの一部の場合、最後の部分（実際の型名）のみを処理する
+            if ($this->isActualTypeNameInFqn($phpcsFile, $stackPtr)) {
+                $this->checkTypeToken($phpcsFile, $stackPtr, 'type declaration');
+            }
+        }
+    }
+
+    /**
+     * T_STRINGトークンがFQNの一部の場合、実際の型名（最後の部分）かどうかを判定
+     */
+    private function isActualTypeNameInFqn(File $phpcsFile, int $stackPtr): bool
+    {
+        $tokens = $phpcsFile->getTokens();
+
+        // 次のトークンが名前空間区切りの場合、これは中間部分なので処理しない
+        $nextPtr = $phpcsFile->findNext([T_WHITESPACE], $stackPtr + 1, null, true);
+        if ($nextPtr !== false && $tokens[$nextPtr]['code'] === T_NS_SEPARATOR) {
+            return false;
+        }
+
+        // このトークンが型名の最終部分である場合のみtrue
+        return true;
+    }
+
+    /**
+     * T_NAME_FULLY_QUALIFIEDおよびT_NAME_QUALIFIEDトークンを処理（PHP 8.0+）
+     */
+    private function processQualifiedName(File $phpcsFile, int $stackPtr, bool $isFullyQualified): void
+    {
+        $tokens = $phpcsFile->getTokens();
+        $typeName = $tokens[$stackPtr]['content'];
+
+        // 型宣言のコンテキストかどうかを確認
+        if ($this->isInTypeDeclarationContextForQualifiedName($phpcsFile, $stackPtr)) {
+            if ($isFullyQualified) {
+                // 完全修飾名の場合：先頭のバックスラッシュを除去して正規化
+                $normalizedTypeName = ltrim($typeName, '\\');
+
+                // 禁止型かどうかをチェック
+                if (isset($this->forbiddenTypes[$normalizedTypeName])) {
+                    self::$error = ['message' => "Type '{$normalizedTypeName}' is forbidden.", 'stackPtr' => $stackPtr, 'code' => 'ForbiddenTypeUsage'];
+                }
+            } else {
+                // 部分修飾名の場合：use文を考慮した解決を行う
+                $resolvedTypeName = $this->resolveQualifiedTypeName($phpcsFile, $typeName);
+
+                // 禁止型かどうかをチェック（元の名前と解決後の名前の両方）
+                if (isset($this->forbiddenTypes[$resolvedTypeName])) {
+                    self::$error = ['message' => "Type '{$resolvedTypeName}' is forbidden.", 'stackPtr' => $stackPtr, 'code' => 'ForbiddenTypeUsage'];
+                } elseif (isset($this->forbiddenTypes[$typeName])) {
+                    self::$error = ['message' => "Type '{$resolvedTypeName}' is forbidden.", 'stackPtr' => $stackPtr, 'code' => 'ForbiddenTypeUsage'];
+                }
+            }
         }
     }
 
@@ -271,8 +375,6 @@ final class ForbiddenTypeUsageSniff implements Sniff
      */
     private function checkTypeToken(File $phpcsFile, int $tokenPtr, string $context): void
     {
-        $tokens = $phpcsFile->getTokens();
-
         // FQN（完全修飾名）を構築する
         $fqnResult = $this->buildFullQualifiedName($phpcsFile, $tokenPtr);
         $fullTypeName = $fqnResult['fqn'];
@@ -282,33 +384,12 @@ final class ForbiddenTypeUsageSniff implements Sniff
         $resolvedTypeName = $this->resolveFullTypeName($phpcsFile, $tokenPtr);
 
         // 禁止型かどうかをチェック（優先順位：FQN > 解決された型名 > 短縮型名）
-        $errorMessage = null;
-        $detectedType = null;
-
         if ($fullTypeName && isset($this->forbiddenTypes[$fullTypeName])) {
-            $errorMessage = $this->forbiddenTypes[$fullTypeName];
-            $detectedType = $fullTypeName;
+            self::$error = ['message' => "Type '{$resolvedTypeName}' is forbidden.", 'stackPtr' => $tokenPtr, 'code' => 'ForbiddenTypeUsage'];
         } elseif ($resolvedTypeName && isset($this->forbiddenTypes[$resolvedTypeName])) {
-            $errorMessage = $this->forbiddenTypes[$resolvedTypeName];
-            $detectedType = $resolvedTypeName;
+            self::$error = ['message' => "Type '{$resolvedTypeName}' is forbidden.", 'stackPtr' => $tokenPtr, 'code' => 'ForbiddenTypeUsage'];
         } elseif (isset($this->forbiddenTypes[$shortTypeName])) {
-            $errorMessage = $this->forbiddenTypes[$shortTypeName];
-            $detectedType = $shortTypeName;
-        }
-
-        if ($errorMessage !== null) {
-            // カスタムエラーメッセージが設定されている場合はそれを使用、そうでなければデフォルトメッセージ
-            if ($errorMessage !== '') {
-                $error = $errorMessage;
-            } else {
-                $error = sprintf(
-                    'Forbidden type "%s" found in %s.',
-                    $detectedType,
-                    $context
-                );
-            }
-
-            $phpcsFile->addError($error, $tokenPtr, 'ForbiddenTypeUsage');
+            self::$error = ['message' => "Type '{$resolvedTypeName}' is forbidden.", 'stackPtr' => $tokenPtr, 'code' => 'ForbiddenTypeUsage'];
         }
     }
 
@@ -431,29 +512,82 @@ final class ForbiddenTypeUsageSniff implements Sniff
     private function resolveFullTypeName(File $phpcsFile, int $tokenPtr): string
     {
         $tokens = $phpcsFile->getTokens();
-        $typeName = $tokens[$tokenPtr]['content'];
+
+        // FQNを構築してパーシャルインポートにも対応
+        $fqnResult = $this->buildFullQualifiedName($phpcsFile, $tokenPtr);
+        $typeName = $fqnResult['short'];
+        $partialPath = $fqnResult['fqn'] ?? $typeName;
 
         // 既に完全修飾名の場合はそのまま返す
-        if (str_starts_with($typeName, '\\')) {
-            return ltrim($typeName, '\\');
+        if (str_starts_with($typeName, '\\') || str_starts_with($partialPath, '\\')) {
+            return ltrim($partialPath, '\\');
         }
 
         // use文から解決を試みる
         $useStatements = $this->findUseStatements($phpcsFile);
 
-        // 完全にマッチするuse文を探す
+        // 1. 完全にマッチするuse文を探す（短縮形）
         if (isset($useStatements[$typeName])) {
             return $useStatements[$typeName];
         }
 
-        // 部分マッチ（名前空間付き）を探す
+        // 2. パーシャルパスが利用可能な場合の解決
+        if ($partialPath !== $typeName && str_contains($partialPath, '\\')) {
+            // パーシャルインポートのケース: use PHPStan\PhpDocParser\Parser; function a(Parser\ConstExprParser $p)
+            $pathParts = explode('\\', $partialPath);
+            $firstPart = $pathParts[0];
+
+            // 最初の部分がuse文で定義されているかチェック
+            if (isset($useStatements[$firstPart])) {
+                // 残りの部分と結合して完全なパスを構築
+                $remainingPath = implode('\\', array_slice($pathParts, 1));
+                return $useStatements[$firstPart] . '\\' . $remainingPath;
+            }
+        }
+
+        // 3. 完全なパーシャルパスにマッチするuse文を探す
+        if (isset($useStatements[$partialPath])) {
+            return $useStatements[$partialPath];
+        }
+
+        // 4. 部分マッチ（名前空間付き）を探す（後方一致）
         foreach ($useStatements as $alias => $fullName) {
             if (str_ends_with($fullName, '\\' . $typeName)) {
                 return $fullName;
             }
         }
 
-        return $typeName;
+        return $partialPath;
+    }
+
+    /**
+     * 修飾型名を完全修飾名に解決（T_NAME_QUALIFIED用）
+     */
+    private function resolveQualifiedTypeName(File $phpcsFile, string $qualifiedName): string
+    {
+        // use文から解決を試みる
+        $useStatements = $this->findUseStatements($phpcsFile);
+
+        // パーシャルインポートのケース: use PHPStan\PhpDocParser\Parser; function a(Parser\ConstExprParser $p)
+        if (str_contains($qualifiedName, '\\')) {
+            $pathParts = explode('\\', $qualifiedName);
+            $firstPart = $pathParts[0];
+
+            // 最初の部分がuse文で定義されているかチェック
+            if (isset($useStatements[$firstPart])) {
+                // 残りの部分と結合して完全なパスを構築
+                $remainingPath = implode('\\', array_slice($pathParts, 1));
+                return $useStatements[$firstPart] . '\\' . $remainingPath;
+            }
+        }
+
+        // 完全一致するuse文があるかチェック
+        if (isset($useStatements[$qualifiedName])) {
+            return $useStatements[$qualifiedName];
+        }
+
+        // 解決できない場合はそのまま返す
+        return $qualifiedName;
     }
 
     /**
@@ -520,5 +654,50 @@ final class ForbiddenTypeUsageSniff implements Sniff
             'alias' => $alias,
             'fullName' => ltrim($fullName, '\\'),
         ];
+    }
+
+
+
+    /**
+     * T_NAME_FULLY_QUALIFIEDおよびT_NAME_QUALIFIEDトークンが型宣言のコンテキストにあるかどうかを判定
+     */
+    private function isInTypeDeclarationContextForQualifiedName(File $phpcsFile, int $stackPtr): bool
+    {
+        $tokens = $phpcsFile->getTokens();
+
+        // 前のトークンをチェックして型宣言のコンテキストかどうかを判定
+        $prevPtr = $phpcsFile->findPrevious([T_WHITESPACE], $stackPtr - 1, null, true);
+        if ($prevPtr === false) {
+            return false;
+        }
+
+        $prevToken = $tokens[$prevPtr];
+
+        // 以下のトークンの直後にある場合は型宣言のコンテキスト
+        $typeDeclarationIndicators = [
+            T_OPEN_PARENTHESIS,  // 関数引数の型: function test(Type $param)
+            T_COLON,            // 戻り値型: function test(): Type
+            T_COMMA,            // 複数引数の型: function test(Type1 $p1, Type2 $p2)
+            T_TYPE_UNION,             // Union型: Type1|Type2
+            T_TYPE_INTERSECTION,        // Intersection型: Type1&Type2
+            T_NULLABLE,         // Nullable型: ?Type
+            T_PUBLIC,           // プロパティ型: public Type $prop
+            T_PRIVATE,          // プロパティ型: private Type $prop
+            T_PROTECTED,        // プロパティ型: protected Type $prop
+            T_STATIC,           // プロパティ型: static Type $prop
+            T_READONLY,         // プロパティ型: readonly Type $prop
+        ];
+
+        if (in_array($prevToken['code'], $typeDeclarationIndicators)) {
+            return true;
+        }
+
+        // 次のトークンが変数（引数/プロパティ）かチェック
+        $nextPtr = $phpcsFile->findNext([T_WHITESPACE], $stackPtr + 1, null, true);
+        if ($nextPtr !== false && $tokens[$nextPtr]['code'] === T_VARIABLE) {
+            return true;
+        }
+
+        return false;
     }
 }
