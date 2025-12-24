@@ -6,7 +6,6 @@ use PHP_CodeSniffer\Files\File;
 use PHP_CodeSniffer\Sniffs\Sniff;
 use SlevomatCodingStandard\Helpers\DocCommentHelper;
 use SlevomatCodingStandard\Helpers\PropertyHelper;
-use SlevomatCodingStandard\Helpers\TokenHelper;
 
 class RequireReadOnlyClassSniff implements Sniff {
     public function register() {
@@ -54,14 +53,7 @@ class RequireReadOnlyClassSniff implements Sniff {
         $properties = $this->getClassProperties($phpcsFile, $classPtr);
         
         if (count($properties) === 0) {
-            // プロパティがない場合はreadonly classを要求
-            if (!$isReadonlyClass) {
-                $phpcsFile->addError(
-                    'Class should be declared as readonly',
-                    $classPtr,
-                    'RequireReadOnlyClass'
-                );
-            }
+            // プロパティがない場合はチェックしない（readonly classにする意味がない）
             return;
         }
         
