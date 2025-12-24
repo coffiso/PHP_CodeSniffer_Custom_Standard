@@ -1,0 +1,40 @@
+name: "Copilot Setup Steps"
+
+# セットアップステップが変更されると自動的に実行されるため、検証が容易になります。
+# また、リポジトリの「アクション」タブから手動テストを実行できます。
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - .github/workflows/copilot-setup-steps.yml
+  pull_request:
+    paths:
+      - .github/workflows/copilot-setup-steps.yml
+
+jobs:
+  # ジョブ名は必ず `copilot-setup-steps` にしてください。そうでないと、Copilot によって取得されません。
+  copilot-setup-steps:
+    runs-on: ubuntu-latest
+
+    # ステップに必要な最小限の権限を設定します。
+    # Copilot には、操作用の独自のトークンが付与されます。
+    permissions:
+      # セットアップ手順の一環としてリポジトリのクローンを作成する場合（例えば依存関係のインストールなど）、`contents: read` 権限が必要です。
+      # セットアップ手順でリポジトリのクローンを作成していない場合は、手順の完了後に Copilot が自動的にクローンを作成します。
+      contents: read
+
+    # 任意のステップを定義でき、エージェントの起動前に実行されます。
+    # コードをチェックアウトしない場合は、Copilot が自動的にチェックアウトを実行します。
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Install PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: pdo, mbstring, gd, mysqli, fileinfo, ctype, exif, sodium, xml
+          tools: composer:v2
+
+      - name: Resolve dependencies (composer)
+        run: composer install
