@@ -86,9 +86,32 @@ class RequireReadOnlyClassSniff implements Sniff {
                 );
                 
                 if ($fix === true) {
-                    // classキーワードの前にreadonlyを追加
+                    // classキーワードより前にあるfinal, abstractなどの修飾子を探し、
+                    // readonlyをそれらの前（最も早い位置）に追加する
                     $phpcsFile->fixer->beginChangeset();
-                    $phpcsFile->fixer->addContentBefore($classPtr, 'readonly ');
+                    
+                    // classキーワードの前を遡って、final/abstractを探す
+                    $insertBeforePtr = $classPtr;
+                    $checkPtr = $classPtr - 1;
+                    while ($checkPtr > 0) {
+                        if ($tokens[$checkPtr]['code'] === T_WHITESPACE || 
+                            $tokens[$checkPtr]['code'] === T_COMMENT || 
+                            $tokens[$checkPtr]['code'] === T_DOC_COMMENT) {
+                            $checkPtr--;
+                            continue;
+                        }
+                        
+                        if ($tokens[$checkPtr]['code'] === T_FINAL || 
+                            $tokens[$checkPtr]['code'] === T_ABSTRACT) {
+                            $insertBeforePtr = $checkPtr;
+                            $checkPtr--;
+                            continue;
+                        }
+                        
+                        break;
+                    }
+                    
+                    $phpcsFile->fixer->addContentBefore($insertBeforePtr, 'readonly ');
                     
                     // 全てのプロパティからreadonlyを削除
                     foreach ($properties as $property) {
