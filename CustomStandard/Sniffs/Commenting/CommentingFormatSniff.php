@@ -643,6 +643,7 @@ class CommentingFormatSniff implements Sniff {
                 T_PRIVATE,
                 T_STATIC,
                 T_FINAL,
+                T_READONLY,
             ],
             $commentCloseTagPtr + 1
         );

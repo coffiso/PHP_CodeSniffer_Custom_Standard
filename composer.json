@@ -1,6 +1,10 @@
 {
     "name": "gmqs/custom-standard",
     "type": "phpcodesniffer-standard",
+    "require": {
+        "php": ">=8.2",
+        "ext-mbstring": "*"
+    },
     "require-dev": {
         "squizlabs/php_codesniffer": "^3.7",
         "slevomat/coding-standard": "^8.14",
@@ -15,8 +19,5 @@
         "psr-4": {
             "CustomStandard\\": "CustomStandard/"
         }
-    },
-  "require": {
-    "ext-mbstring": "*"
-  }
+    }
 }
