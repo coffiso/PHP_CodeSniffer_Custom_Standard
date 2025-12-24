@@ -22,8 +22,13 @@ php_codesnifferの拡張ルール
 ヒアドキュメントの引用符を`EOL`に制限します。
 
 ## Classes
-### CustomStandard.Classes.RequireReadOnlyProperties
-読み取り専用インスタンスプロパティを必須にします。
+### CustomStandard.Classes.RequireReadOnlyClass 🔧
+PHP 8.2のreadonly classを必須にします。
+
+- classがreadonlyの場合、プロパティにはreadonlyキーワードは不要です。[自動修正: プロパティのreadonlyキーワードを削除]
+- readonly classを必須にします。例外として、継承しているサブクラスの場合は指摘しません。
+- プロパティに1つでもreadonlyが設定されている場合、readonly classに昇華するように指摘します。例外として、継承しているサブクラスの場合は指摘しません。
+- プロパティが全てreadonlyの場合、readonly classに昇華するように指摘します。例外として、継承しているサブクラスの場合は指摘しません。[自動修正: プロパティのreadonlyキーワードを全て削除し、classにreadonlyキーワードを付与する]
 
 ## Commenting
 ### CustomStandard.Commenting.CommentingFormat 🔧
