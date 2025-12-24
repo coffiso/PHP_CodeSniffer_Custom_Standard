@@ -8,7 +8,7 @@ use SlevomatCodingStandard\Helpers\DocCommentHelper;
 use SlevomatCodingStandard\Helpers\PropertyHelper;
 use SlevomatCodingStandard\Helpers\TokenHelper;
 
-class RequireReadOnlyPropertiesSniff implements Sniff {
+class RequireReadOnlyClassSniff implements Sniff {
     public function register() {
         return [
             T_CLASS,
