@@ -79,52 +79,65 @@ class RequireReadOnlyClassSniff implements Sniff {
         // 全てのプロパティがreadonlyの場合、readonly classに昇華すべき
         if ($readonlyCount === $nonStaticCount && $readonlyCount > 0) {
             if (!$isReadonlyClass) {
-                $fix = $phpcsFile->addFixableError(
-                    'All properties are readonly. Class should be declared as readonly and readonly modifiers should be removed from properties',
-                    $classPtr,
-                    'ShouldBeReadOnlyClass'
-                );
+                // 継承可能なクラス（abstract または non-final）の場合は自動修正を無効化
+                $isInheritable = $this->isInheritableClass($phpcsFile, $classPtr);
                 
-                if ($fix === true) {
-                    // classキーワードより前にあるfinal, abstractなどの修飾子を探し、
-                    // readonlyをそれらの前（最も早い位置）に追加する
-                    $phpcsFile->fixer->beginChangeset();
+                if ($isInheritable) {
+                    // 継承可能なクラスの場合はエラーのみ（自動修正なし）
+                    $phpcsFile->addError(
+                        'All properties are readonly. Class should be declared as readonly and readonly modifiers should be removed from properties. Auto-fix is disabled for inheritable classes (abstract or non-final)',
+                        $classPtr,
+                        'ShouldBeReadOnlyClass'
+                    );
+                } else {
+                    // 継承不可能なクラス（final）の場合は自動修正可能
+                    $fix = $phpcsFile->addFixableError(
+                        'All properties are readonly. Class should be declared as readonly and readonly modifiers should be removed from properties',
+                        $classPtr,
+                        'ShouldBeReadOnlyClass'
+                    );
                     
-                    // classキーワードの前を遡って、final/abstractを探す
-                    $insertBeforePtr = $classPtr;
-                    $checkPtr = $classPtr - 1;
-                    while ($checkPtr > 0) {
-                        if ($tokens[$checkPtr]['code'] === T_WHITESPACE || 
-                            $tokens[$checkPtr]['code'] === T_COMMENT || 
-                            $tokens[$checkPtr]['code'] === T_DOC_COMMENT) {
-                            $checkPtr--;
-                            continue;
+                    if ($fix === true) {
+                        // classキーワードより前にあるfinal, abstractなどの修飾子を探し、
+                        // readonlyをそれらの前（最も早い位置）に追加する
+                        $phpcsFile->fixer->beginChangeset();
+                        
+                        // classキーワードの前を遡って、final/abstractを探す
+                        $insertBeforePtr = $classPtr;
+                        $checkPtr = $classPtr - 1;
+                        while ($checkPtr > 0) {
+                            if ($tokens[$checkPtr]['code'] === T_WHITESPACE || 
+                                $tokens[$checkPtr]['code'] === T_COMMENT || 
+                                $tokens[$checkPtr]['code'] === T_DOC_COMMENT) {
+                                $checkPtr--;
+                                continue;
+                            }
+                            
+                            if ($tokens[$checkPtr]['code'] === T_FINAL || 
+                                $tokens[$checkPtr]['code'] === T_ABSTRACT) {
+                                $insertBeforePtr = $checkPtr;
+                                $checkPtr--;
+                                continue;
+                            }
+                            
+                            break;
                         }
                         
-                        if ($tokens[$checkPtr]['code'] === T_FINAL || 
-                            $tokens[$checkPtr]['code'] === T_ABSTRACT) {
-                            $insertBeforePtr = $checkPtr;
-                            $checkPtr--;
-                            continue;
-                        }
+                        $phpcsFile->fixer->addContentBefore($insertBeforePtr, 'readonly ');
                         
-                        break;
-                    }
-                    
-                    $phpcsFile->fixer->addContentBefore($insertBeforePtr, 'readonly ');
-                    
-                    // 全てのプロパティからreadonlyを削除
-                    foreach ($properties as $property) {
-                        if ($property['has_readonly'] && $property['readonly_ptr'] !== null) {
-                            // readonlyキーワードとその後の空白を削除
-                            $phpcsFile->fixer->replaceToken($property['readonly_ptr'], '');
-                            $nextPtr = $property['readonly_ptr'] + 1;
-                            if (isset($tokens[$nextPtr]) && $tokens[$nextPtr]['code'] === T_WHITESPACE) {
-                                $phpcsFile->fixer->replaceToken($nextPtr, '');
+                        // 全てのプロパティからreadonlyを削除
+                        foreach ($properties as $property) {
+                            if ($property['has_readonly'] && $property['readonly_ptr'] !== null) {
+                                // readonlyキーワードとその後の空白を削除
+                                $phpcsFile->fixer->replaceToken($property['readonly_ptr'], '');
+                                $nextPtr = $property['readonly_ptr'] + 1;
+                                if (isset($tokens[$nextPtr]) && $tokens[$nextPtr]['code'] === T_WHITESPACE) {
+                                    $phpcsFile->fixer->replaceToken($nextPtr, '');
+                                }
                             }
                         }
+                        $phpcsFile->fixer->endChangeset();
                     }
-                    $phpcsFile->fixer->endChangeset();
                 }
             }
         } elseif ($readonlyCount > 0 && !$isReadonlyClass) {
@@ -283,6 +296,43 @@ class RequireReadOnlyClassSniff implements Sniff {
         $extendsPtr = $phpcsFile->findNext(T_EXTENDS, $classPtr + 1, $scopeOpener);
         
         return $extendsPtr !== false;
+    }
+    
+    /**
+     * クラスが継承可能かどうかをチェック（abstract または non-final）
+     */
+    private function isInheritableClass(File $phpcsFile, int $classPtr): bool {
+        $tokens = $phpcsFile->getTokens();
+        
+        // classキーワードの前にabstractがあるかチェック
+        $ptr = $classPtr - 1;
+        while ($ptr > 0) {
+            if ($tokens[$ptr]['code'] === T_WHITESPACE || 
+                $tokens[$ptr]['code'] === T_COMMENT || 
+                $tokens[$ptr]['code'] === T_DOC_COMMENT) {
+                $ptr--;
+                continue;
+            }
+            
+            if ($tokens[$ptr]['code'] === T_ABSTRACT) {
+                return true;
+            }
+            
+            if ($tokens[$ptr]['code'] === T_FINAL) {
+                return false;
+            }
+            
+            // readonly の場合は続けて探索
+            if ($tokens[$ptr]['code'] === T_READONLY) {
+                $ptr--;
+                continue;
+            }
+            
+            break;
+        }
+        
+        // final が見つからなかった場合は継承可能（non-final）
+        return true;
     }
     
     /**
