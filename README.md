@@ -27,12 +27,7 @@ php_codesnifferの拡張ルール
 
 ## Classes
 ### CustomStandard.Classes.RequireReadOnlyClass 🔧
-PHP 8.2のreadonly classを必須にします。
-
-- classがreadonlyの場合、プロパティにはreadonlyキーワードは不要です。[自動修正: プロパティのreadonlyキーワードを削除]
-- readonly classを必須にします。例外として、継承しているサブクラスの場合は指摘しません。
-- プロパティに1つでもreadonlyが設定されている場合、readonly classに昇華するように指摘します。例外として、継承しているサブクラスの場合は指摘しません。
-- プロパティが全てreadonlyの場合、readonly classに昇華するように指摘します。例外として、継承しているサブクラスの場合は指摘しません。[自動修正: プロパティのreadonlyキーワードを全て削除し、classにreadonlyキーワードを付与する]
+読み取り専用クラスを原則必須にします。
 
 ## TypeHints
 ### CustomStandard.TypeHints.ForbiddenTypeUsage
