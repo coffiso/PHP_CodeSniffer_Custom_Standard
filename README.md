@@ -6,13 +6,17 @@ php_codesnifferの拡張ルール
 
 ## Functions
 ### CustomStandard.Functions.RequireClosureArgumentTypeHint
-無名関数の引数に型ヒントがない場合に指摘します。
+無名関数・アロー関数の引数に型ヒントがない場合に指摘します。
 ### CustomStandard.Functions.RequireClosureReturnTypeHint
-無名関数の戻り値に型ヒントがない場合に指摘します。
+無名関数・アロー関数の戻り値に型ヒントがない場合に指摘します。
 ### CustomStandard.Functions.ForbiddenVariadicArguments
-可変長引数を禁止します。
+関数・メソッド・無名関数・アロー関数の可変長引数（`...`）を禁止します。配列での受け取りを要求します。
+
+**例外**: `@inheritdoc`アノテーションが付いているメソッドは除外されます。
 ### CustomStandard.Functions.ForbiddenDefaultArgumentValues
-デフォルト引数を禁止します。
+関数・メソッド・無名関数・アロー関数のデフォルト引数を禁止します。全ての引数は明示的に渡す必要があります。
+
+**例外**: `@inheritdoc`アノテーションが付いているメソッドは除外されます。
 
 ## Strings
 ### CustomStandard.Strings.RequireDoubleQuotes 🔧
