@@ -8,6 +8,19 @@ use SlevomatCodingStandard\Helpers\DocCommentHelper;
 use SlevomatCodingStandard\Helpers\PropertyHelper;
 
 class RequireReadOnlyClassSniff implements Sniff {
+    /**
+     * プロパティの型宣言を表すトークンコードのリスト
+     */
+    private function getTypeTokens(): array {
+        return [
+            T_STRING,           // クラス名、インターフェース名、ビルトイン型 (int, string, bool, float, array, object, mixed, callable, iterable, void, never など)
+            T_NULLABLE,         // ? (nullable型)
+            T_NS_SEPARATOR,     // \ (名前空間区切り)
+            T_TYPE_UNION,       // | (union型)
+            T_TYPE_INTERSECTION, // & (intersection型)
+        ];
+    }
+
     public function register() {
         return [
             T_CLASS,
@@ -60,14 +73,21 @@ class RequireReadOnlyClassSniff implements Sniff {
         // 各プロパティのreadonly状態をチェック
         $readonlyCount = 0;
         $nonStaticCount = 0;
+        $hasStaticProperties = false;
+        $hasUntypedProperties = false;
 
         foreach ($properties as $property) {
             if ($property['is_static']) {
+                $hasStaticProperties = true;
                 continue;
             }
             $nonStaticCount++;
             if ($property['has_readonly']) {
                 $readonlyCount++;
+            }
+            // 型指定がないプロパティをチェック
+            if (!$property['has_type']) {
+                $hasUntypedProperties = true;
             }
         }
 
@@ -82,15 +102,18 @@ class RequireReadOnlyClassSniff implements Sniff {
                 // 継承可能なクラス（abstract または non-final）の場合は自動修正を無効化
                 $isInheritable = $this->isInheritableClass($phpcsFile, $classPtr);
 
-                if ($isInheritable) {
-                    // 継承可能なクラスの場合はエラーのみ（自動修正なし）
+                // staticプロパティが存在する場合、または継承可能なクラスの場合、
+                // または型指定のないプロパティが存在する場合は自動修正を無効化
+                // readonly classではstaticプロパティを持てず、全プロパティに型指定が必要なため
+                if ($isInheritable || $hasStaticProperties || $hasUntypedProperties) {
+                    // 継承可能なクラス、staticプロパティが存在、または型なしプロパティが存在する場合はエラーのみ（自動修正なし）
                     $phpcsFile->addError(
                         'All properties are readonly. Class should be declared as readonly and readonly modifiers should be removed from properties',
                         $classPtr,
                         'ShouldBeReadOnlyClass'
                     );
                 } else {
-                    // 継承不可能なクラス（final）の場合は自動修正可能
+                    // 継承不可能でstaticプロパティも無く型もあるクラス（final）の場合は自動修正可能
                     $fix = $phpcsFile->addFixableError(
                         'All properties are readonly. Class should be declared as readonly and readonly modifiers should be removed from properties',
                         $classPtr,
@@ -362,9 +385,11 @@ class RequireReadOnlyClassSniff implements Sniff {
                         $isStatic = false;
                         $hasReadonly = false;
                         $readonlyPtr = null;
+                        $hasType = false;
 
-                        // readonly と static をチェック
+                        // readonly と static と型をチェック
                         $checkPtr = $modifierPtr;
+                        $typeTokens = $this->getTypeTokens();
                         while ($checkPtr < $ptr) {
                             if ($tokens[$checkPtr]['code'] === T_STATIC) {
                                 $isStatic = true;
@@ -372,6 +397,10 @@ class RequireReadOnlyClassSniff implements Sniff {
                             if ($tokens[$checkPtr]['code'] === T_READONLY) {
                                 $hasReadonly = true;
                                 $readonlyPtr = $checkPtr;
+                            }
+                            // 型ヒントをチェック
+                            if (in_array($tokens[$checkPtr]['code'], $typeTokens, true)) {
+                                $hasType = true;
                             }
                             $checkPtr++;
                         }
@@ -399,6 +428,7 @@ class RequireReadOnlyClassSniff implements Sniff {
                             'is_static' => $isStatic,
                             'has_readonly' => $hasReadonly,
                             'readonly_ptr' => $readonlyPtr,
+                            'has_type' => $hasType,
                         ];
                     }
                 }
