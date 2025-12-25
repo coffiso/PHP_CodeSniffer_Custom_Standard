@@ -6,13 +6,17 @@ php_codesnifferの拡張ルール
 
 ## Functions
 ### CustomStandard.Functions.RequireClosureArgumentTypeHint
-無名関数の引数に型ヒントがない場合に指摘します。
+無名関数・アロー関数の引数に型ヒントがない場合に指摘します。
 ### CustomStandard.Functions.RequireClosureReturnTypeHint
-無名関数の戻り値に型ヒントがない場合に指摘します。
+無名関数・アロー関数の戻り値に型ヒントがない場合に指摘します。
 ### CustomStandard.Functions.ForbiddenVariadicArguments
-可変長引数を禁止します。
+関数・メソッド・無名関数・アロー関数の可変長引数（`...`）を禁止します。配列での受け取りを要求します。
+
+**例外**: `@inheritdoc`アノテーションが付いているメソッドは除外されます。
 ### CustomStandard.Functions.ForbiddenDefaultArgumentValues
-デフォルト引数を禁止します。
+関数・メソッド・無名関数・アロー関数のデフォルト引数を禁止します。全ての引数は明示的に渡す必要があります。
+
+**例外**: `@inheritdoc`アノテーションが付いているメソッドは除外されます。
 
 ## Strings
 ### CustomStandard.Strings.RequireDoubleQuotes 🔧
@@ -29,6 +33,30 @@ PHP 8.2のreadonly classを必須にします。
 - readonly classを必須にします。例外として、継承しているサブクラスの場合は指摘しません。
 - プロパティに1つでもreadonlyが設定されている場合、readonly classに昇華するように指摘します。例外として、継承しているサブクラスの場合は指摘しません。
 - プロパティが全てreadonlyの場合、readonly classに昇華するように指摘します。例外として、継承しているサブクラスの場合は指摘しません。[自動修正: プロパティのreadonlyキーワードを全て削除し、classにreadonlyキーワードを付与する]
+
+## TypeHints
+### CustomStandard.TypeHints.ForbiddenTypeUsage
+使用禁止クラス・インターフェースの型使用を検出します。
+
+設定可能な `forbiddenTypes` プロパティで禁止する型を指定します。以下の場面での禁止型使用を検出します：
+- 関数・メソッドの引数型宣言
+- 関数・メソッドの戻り値型宣言
+- プロパティの型宣言
+- Union型・Intersection型での使用
+- クロージャ・Arrow関数での型使用
+- インターフェース・抽象クラスでの型宣言
+
+設定例（ruleset.xmlで使用）:
+```xml
+<rule ref="CustomStandard.TypeHints.ForbiddenTypeUsage">
+    <properties>
+        <property name="forbiddenTypes" type="array">
+            <element key="DateTime" value="DateTimeインターフェースを使用してください"/>
+            <element key="stdClass" value="stdClassの使用は禁止されています"/>
+        </property>
+    </properties>
+</rule>
+```
 
 ## Commenting
 ### CustomStandard.Commenting.CommentingFormat 🔧
