@@ -65,11 +65,6 @@ class RequireReadOnlyClassSniff implements Sniff {
         // クラスのプロパティを取得
         $properties = $this->getClassProperties($phpcsFile, $classPtr);
 
-        if (count($properties) === 0) {
-            // プロパティがない場合はチェックしない（readonly classにする意味がない）
-            return;
-        }
-
         // 各プロパティのreadonly状態をチェック
         $readonlyCount = 0;
         $nonStaticCount = 0;
@@ -92,12 +87,12 @@ class RequireReadOnlyClassSniff implements Sniff {
         }
 
         // プロパティが全て static の場合はスキップ
-        if ($nonStaticCount === 0) {
+        if (count($properties) > 0 && $nonStaticCount === 0) {
             return;
         }
 
-        // 全てのプロパティがreadonlyの場合、readonly classに昇華すべき
-        if ($readonlyCount === $nonStaticCount && $readonlyCount > 0) {
+        // 全てのプロパティがreadonlyの場合、またはnon-staticプロパティが存在しない場合、readonly classに昇華すべき
+        if (($readonlyCount === $nonStaticCount && $readonlyCount > 0) || $nonStaticCount === 0) {
             if (!$isReadonlyClass) {
                 // 継承可能なクラス（abstract または non-final）の場合は自動修正を無効化
                 $isInheritable = $this->isInheritableClass($phpcsFile, $classPtr);
