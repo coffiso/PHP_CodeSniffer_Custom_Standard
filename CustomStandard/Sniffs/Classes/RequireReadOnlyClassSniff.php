@@ -54,8 +54,18 @@ class RequireReadOnlyClassSniff implements Sniff {
             return;
         }
 
-        // 継承しているクラスはスキップ
+        // readonly classかどうかをチェック
+        $isReadonlyClass = $this->isReadonlyClass($phpcsFile, $classPtr);
+
+        // 継承しているクラスの場合は、readonly classへの昇華を提案するのみ
         if ($this->isExtendingClass($phpcsFile, $classPtr)) {
+            if (!$isReadonlyClass) {
+                $phpcsFile->addError(
+                    'Class extends another class. Consider declaring the class as readonly if possible',
+                    $classPtr,
+                    'ConsiderReadOnlyClass'
+                );
+            }
             return;
         }
 
@@ -86,8 +96,15 @@ class RequireReadOnlyClassSniff implements Sniff {
             }
         }
 
-        // プロパティが全て static の場合はスキップ
+        // プロパティが全て static の場合は、readonly classへの昇華を提案するのみ
         if (count($properties) > 0 && $nonStaticCount === 0) {
+            if (!$isReadonlyClass) {
+                $phpcsFile->addError(
+                    'Class has only static properties. Consider declaring the class as readonly if non-static properties are added',
+                    $classPtr,
+                    'ConsiderReadOnlyClass'
+                );
+            }
             return;
         }
 
