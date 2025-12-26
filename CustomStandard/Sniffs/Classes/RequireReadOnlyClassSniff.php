@@ -69,9 +69,6 @@ class RequireReadOnlyClassSniff implements Sniff {
             return;
         }
 
-        // readonly classかどうかをチェック
-        $isReadonlyClass = $this->isReadonlyClass($phpcsFile, $classPtr);
-
         // クラスのプロパティを取得
         $properties = $this->getClassProperties($phpcsFile, $classPtr);
 
