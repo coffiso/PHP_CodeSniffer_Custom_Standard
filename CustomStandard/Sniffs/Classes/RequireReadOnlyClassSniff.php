@@ -166,11 +166,11 @@ class RequireReadOnlyClassSniff implements Sniff {
                 'ConsiderReadOnlyClass'
             );
         } elseif ($readonlyCount === 0 && !$isReadonlyClass) {
-            // readonlyプロパティが1つもない場合もreadonly classを要求
+            // readonlyプロパティが1つもない場合もreadonly classへの昇華を提案
             $phpcsFile->addError(
-                'Class should be declared as readonly',
+                'Class has no readonly properties. Consider declaring the class as readonly',
                 $classPtr,
-                'RequireReadOnlyClass'
+                'ConsiderReadOnlyClass'
             );
         }
     }
