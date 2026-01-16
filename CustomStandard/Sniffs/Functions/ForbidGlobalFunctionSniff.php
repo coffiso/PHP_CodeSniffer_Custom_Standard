@@ -5,13 +5,35 @@ namespace CustomStandard\Sniffs\Functions;
 use PHP_CodeSniffer\Files\File;
 use PHP_CodeSniffer\Sniffs\Sniff;
 
+/**
+ * Prohibits the definition of global functions without a namespace.
+ *
+ * All functions must be defined within a namespace. This sniff detects
+ * named functions defined in the global scope and reports an error.
+ *
+ * Closures, arrow functions, and class/interface/trait methods are allowed
+ * as they are not global functions.
+ */
 class ForbidGlobalFunctionSniff implements Sniff {
+    /**
+     * Registers the tokens that this sniff wants to listen for.
+     *
+     * @return array<int>
+     */
     public function register() {
         return [
             T_FUNCTION,
         ];
     }
 
+    /**
+     * Processes this sniff when a matching token is found.
+     *
+     * @param File $phpcsFile The file being scanned.
+     * @param int  $stackPtr  The position of the current token in the stack.
+     *
+     * @return void
+     */
     public function process(File $phpcsFile, $stackPtr) {
         $tokens = $phpcsFile->getTokens();
         
