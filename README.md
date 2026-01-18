@@ -30,7 +30,7 @@ php_codesnifferの拡張ルール
 読み取り専用クラスを原則必須にします。
 
 ## Namespaces
-### CustomStandard.Namespaces.ForbidAliasedImports 🔧
+### CustomStandard.Namespaces.ForbidAliasedImports
 名前空間のエイリアスインポートを禁止します。
 
 エイリアスインポート（`as`キーワードを使用したインポート）の代わりに、通常のインポートまたは名前空間の部分インポートの使用を推奨します。
@@ -38,16 +38,16 @@ php_codesnifferの拡張ルール
 **例外**: インポートしたクラス名と同名のクラスをファイル内で定義している場合のみ、エイリアスインポートが許可されます。
 
 例:
-#### ❌️エイリアスインポートは使用しないでください 🔧
+#### ❌️エイリアスインポートは使用しないでください
 ```php
 use Symfony\Component\HttpFoundation\Request as HttpRequest;
-// → use Symfony\Component\HttpFoundation\Request; に自動修正
+// 推奨: use Symfony\Component\HttpFoundation\Request;
 ```
-#### ❌️インポート間の名前衝突も部分インポートで解決してください 🔧
+#### ❌️インポート間の名前衝突も部分インポートで解決してください
 ```php
 use Vendor1\Request as Request1;
 use Vendor2\Request as Request2;
-// → use Vendor1; と use Vendor2; に自動修正
+// 推奨: use Vendor1; と use Vendor2;
 // 利用時: new Vendor1\Request(); new Vendor2\Request();
 ```
 #### ✅ファイル内で定義しているクラスとの名前衝突の場合のみエイリアスを使用できます

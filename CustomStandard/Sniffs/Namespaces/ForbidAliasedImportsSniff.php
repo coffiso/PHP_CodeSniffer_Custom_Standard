@@ -64,15 +64,11 @@ class ForbidAliasedImportsSniff implements Sniff
         }
 
         // エイリアスインポートを検出
-        $fix = $phpcsFile->addFixableError(
+        $phpcsFile->addError(
             'Aliased imports are forbidden. Use non-aliased imports or partial namespace imports instead.',
             $asPtr,
             'ForbidAliasedImports'
         );
-
-        if ($fix === true) {
-            $this->fixAliasedImport($phpcsFile, $stackPtr, $semicolon, $useInfo);
-        }
     }
 
     /**
@@ -171,93 +167,5 @@ class ForbidAliasedImportsSniff implements Sniff
         }
 
         return false;
-    }
-
-    /**
-     * 他のインポートとクラス名が衝突するかチェック
-     */
-    private function hasImportCollision(File $phpcsFile, string $className, int $currentUsePtr): bool
-    {
-        $tokens = $phpcsFile->getTokens();
-
-        // ファイル内の全use文を取得
-        for ($i = 0; $i < $phpcsFile->numTokens; $i++) {
-            if ($tokens[$i]['code'] !== T_USE) {
-                continue;
-            }
-
-            // 現在のuse文はスキップ
-            if ($i === $currentUsePtr) {
-                continue;
-            }
-
-            // クラス内のuse（トレイト使用）は除外
-            if ($this->isTraitUse($phpcsFile, $i)) {
-                continue;
-            }
-
-            // use文の終了を見つける
-            $semicolon = $phpcsFile->findNext(T_SEMICOLON, $i);
-            if ($semicolon === false) {
-                continue;
-            }
-
-            // asキーワードの有無をチェック
-            $asPtr = $phpcsFile->findNext(T_AS, $i, $semicolon);
-
-            // 他のuse文のクラス名を取得（エイリアスがある場合でも元のクラス名）
-            $otherFullName = '';
-            $endPos = ($asPtr !== false) ? $asPtr : $semicolon;
-            
-            for ($j = $i + 1; $j < $endPos; $j++) {
-                if ($tokens[$j]['code'] === T_STRING || $tokens[$j]['code'] === T_NS_SEPARATOR) {
-                    $otherFullName .= $tokens[$j]['content'];
-                } elseif (defined('T_NAME_FULLY_QUALIFIED') && $tokens[$j]['code'] === T_NAME_FULLY_QUALIFIED) {
-                    $otherFullName .= $tokens[$j]['content'];
-                } elseif (defined('T_NAME_QUALIFIED') && $tokens[$j]['code'] === T_NAME_QUALIFIED) {
-                    $otherFullName .= $tokens[$j]['content'];
-                }
-            }
-
-            $otherParts = explode('\\', ltrim($otherFullName, '\\'));
-            $otherClassName = end($otherParts);
-
-            // 他のuse文の実際のクラス名が現在のuse文のクラス名と一致するか
-            if ($otherClassName === $className) {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    /**
-     * エイリアスインポートを修正
-     */
-    private function fixAliasedImport(File $phpcsFile, int $usePtr, int $semicolon, array $useInfo): void
-    {
-        $tokens = $phpcsFile->getTokens();
-
-        $phpcsFile->fixer->beginChangeset();
-
-        // 他のインポートとクラス名が衝突するかチェック
-        if ($this->hasImportCollision($phpcsFile, $useInfo['className'], $usePtr) && $useInfo['namespace'] !== '') {
-            // 名前衝突がある場合は部分インポートに変換
-            $newUseStatement = 'use ' . $useInfo['namespace'] . ';';
-        } else {
-            // 名前衝突がない場合は通常のインポートに変換
-            $newUseStatement = 'use ' . $useInfo['fullName'] . ';';
-        }
-
-        // useキーワードからセミコロンまでを削除して新しい文に置き換え
-        for ($i = $usePtr; $i <= $semicolon; $i++) {
-            if ($i === $usePtr) {
-                $phpcsFile->fixer->replaceToken($i, $newUseStatement);
-            } else {
-                $phpcsFile->fixer->replaceToken($i, '');
-            }
-        }
-
-        $phpcsFile->fixer->endChangeset();
     }
 }
