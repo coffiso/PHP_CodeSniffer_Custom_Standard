@@ -192,19 +192,10 @@ class ForbidAliasedImportsSniff implements Sniff
                 return true;
             }
 
-            // エイリアスなしの場合で、エイリアス名が現在のクラス名と一致するかもチェック
-            if ($asPtr === false) {
-                // エイリアスなしなので、実際のクラス名が衝突するかは上でチェック済み
-            } else {
-                // 他のuse文がエイリアス付きの場合、そのエイリアス名が現在のクラス名と一致するかチェック
-                $otherAlias = '';
-                for ($j = $asPtr + 1; $j < $semicolon; $j++) {
-                    if ($tokens[$j]['code'] === T_STRING) {
-                        $otherAlias .= $tokens[$j]['content'];
-                        break;
-                    }
-                }
-                if ($otherAlias === $className) {
+            // 他のuse文がエイリアス付きの場合、そのエイリアス名が現在のクラス名と一致するかチェック
+            if ($asPtr !== false) {
+                $aliasToken = $phpcsFile->findNext(T_STRING, $asPtr + 1, $semicolon);
+                if ($aliasToken !== false && $tokens[$aliasToken]['content'] === $className) {
                     return true;
                 }
             }
