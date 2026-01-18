@@ -149,7 +149,7 @@ class ForbidAliasedImportsSniff implements Sniff
 
         // ファイル内の全クラス定義を検索
         for ($i = 0; $i < $phpcsFile->numTokens; $i++) {
-            if ($tokens[$i]['code'] !== T_CLASS && $tokens[$i]['code'] !== T_INTERFACE && $tokens[$i]['code'] !== T_TRAIT) {
+            if ($tokens[$i]['code'] !== T_CLASS && $tokens[$i]['code'] !== T_INTERFACE && $tokens[$i]['code'] !== T_TRAIT && $tokens[$i]['code'] !== T_ANON_CLASS) {
                 continue;
             }
 
@@ -241,14 +241,9 @@ class ForbidAliasedImportsSniff implements Sniff
         $phpcsFile->fixer->beginChangeset();
 
         // 他のインポートとクラス名が衝突するかチェック
-        if ($this->hasImportCollision($phpcsFile, $useInfo['className'], $usePtr)) {
+        if ($this->hasImportCollision($phpcsFile, $useInfo['className'], $usePtr) && $useInfo['namespace'] !== '') {
             // 名前衝突がある場合は部分インポートに変換
-            if ($useInfo['namespace'] !== '') {
-                $newUseStatement = 'use ' . $useInfo['namespace'] . ';';
-            } else {
-                // 名前空間がない場合（トップレベルクラス）は通常のインポートに変換
-                $newUseStatement = 'use ' . $useInfo['fullName'] . ';';
-            }
+            $newUseStatement = 'use ' . $useInfo['namespace'] . ';';
         } else {
             // 名前衝突がない場合は通常のインポートに変換
             $newUseStatement = 'use ' . $useInfo['fullName'] . ';';
