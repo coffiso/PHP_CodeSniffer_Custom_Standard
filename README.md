@@ -29,6 +29,29 @@ php_codesnifferの拡張ルール
 ### CustomStandard.Classes.RequireReadOnlyClass 🔧
 読み取り専用クラスを原則必須にします。
 
+## Namespaces
+### CustomStandard.Namespaces.ForbidAliasedImports 🔧
+名前空間のエイリアスインポートを禁止します。
+
+エイリアスインポート（`as`キーワードを使用したインポート）の代わりに、通常のインポートまたは名前空間の部分インポートの使用を推奨します。
+
+**例外**: 名前衝突回避のためエイリアスインポートが必須の場合は指摘しません。
+
+例:
+#### ❌️エイリアスインポートは使用しないでください 🔧
+```php
+use Symfony\Component\HttpFoundation\Request as HttpRequest;
+```
+#### ✅通常のインポートを使用してください
+```php
+use Symfony\Component\HttpFoundation\Request;
+```
+#### ✅名前衝突がある場合のみエイリアスを使用できます
+```php
+use Vendor1\Payment as Payment1;
+use Vendor2\Payment as Payment2;
+```
+
 ## TypeHints
 ### CustomStandard.TypeHints.ForbiddenTypeUsage
 使用禁止クラス・インターフェースの型使用を検出します。
