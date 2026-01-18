@@ -57,9 +57,9 @@ class ForbidAliasedImportsSniff implements Sniff
             return;
         }
 
-        // 名前衝突があるかチェック
-        if ($this->hasNameCollision($phpcsFile, $useInfo['className'], $stackPtr)) {
-            // 名前衝突がある場合は指摘しない
+        // ファイル内で定義されているクラスとの名前衝突があるかチェック
+        if ($this->hasCollisionWithDefinedClass($phpcsFile, $useInfo['className'])) {
+            // 定義されているクラスとの名前衝突がある場合は指摘しない
             return;
         }
 
@@ -97,7 +97,7 @@ class ForbidAliasedImportsSniff implements Sniff
     /**
      * use文を解析
      *
-     * @return array{fullName: string, className: string, alias: string}|null
+     * @return array{fullName: string, className: string, alias: string, namespace: string}|null
      */
     private function parseUseStatement(File $phpcsFile, int $usePtr, int $semicolon, int $asPtr): ?array
     {
@@ -127,21 +127,56 @@ class ForbidAliasedImportsSniff implements Sniff
             return null;
         }
 
-        // クラス名を取得
+        // クラス名と名前空間を取得
         $parts = explode('\\', ltrim($fullName, '\\'));
         $className = end($parts);
+        $namespace = implode('\\', array_slice($parts, 0, -1));
 
         return [
             'fullName' => ltrim($fullName, '\\'),
             'className' => $className,
             'alias' => $alias,
+            'namespace' => $namespace,
         ];
     }
 
     /**
-     * 名前衝突があるかチェック
+     * ファイル内で定義されているクラスとの名前衝突があるかチェック
      */
-    private function hasNameCollision(File $phpcsFile, string $className, int $currentUsePtr): bool
+    private function hasCollisionWithDefinedClass(File $phpcsFile, string $className): bool
+    {
+        $tokens = $phpcsFile->getTokens();
+
+        // ファイル内の全クラス定義を検索
+        for ($i = 0; $i < $phpcsFile->numTokens; $i++) {
+            if ($tokens[$i]['code'] !== T_CLASS && $tokens[$i]['code'] !== T_INTERFACE && $tokens[$i]['code'] !== T_TRAIT) {
+                continue;
+            }
+
+            // 無名クラスはスキップ
+            if ($tokens[$i]['code'] === T_ANON_CLASS) {
+                continue;
+            }
+
+            // クラス名を取得
+            $classNamePtr = $phpcsFile->findNext(T_STRING, $i + 1);
+            if ($classNamePtr === false) {
+                continue;
+            }
+
+            $definedClassName = $tokens[$classNamePtr]['content'];
+            if ($definedClassName === $className) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * 他のインポートとクラス名が衝突するかチェック
+     */
+    private function hasImportCollision(File $phpcsFile, string $className, int $currentUsePtr): bool
     {
         $tokens = $phpcsFile->getTokens();
 
@@ -191,14 +226,6 @@ class ForbidAliasedImportsSniff implements Sniff
             if ($otherClassName === $className) {
                 return true;
             }
-
-            // 他のuse文がエイリアス付きの場合、そのエイリアス名が現在のクラス名と一致するかチェック
-            if ($asPtr !== false) {
-                $aliasToken = $phpcsFile->findNext(T_STRING, $asPtr + 1, $semicolon);
-                if ($aliasToken !== false && $tokens[$aliasToken]['content'] === $className) {
-                    return true;
-                }
-            }
         }
 
         return false;
@@ -213,9 +240,19 @@ class ForbidAliasedImportsSniff implements Sniff
 
         $phpcsFile->fixer->beginChangeset();
 
-        // use文全体を置き換え
-        // 通常のインポートに変換
-        $newUseStatement = 'use ' . $useInfo['fullName'] . ';';
+        // 他のインポートとクラス名が衝突するかチェック
+        if ($this->hasImportCollision($phpcsFile, $useInfo['className'], $usePtr)) {
+            // 名前衝突がある場合は部分インポートに変換
+            if ($useInfo['namespace'] !== '') {
+                $newUseStatement = 'use ' . $useInfo['namespace'] . ';';
+            } else {
+                // 名前空間がない場合（トップレベルクラス）は通常のインポートに変換
+                $newUseStatement = 'use ' . $useInfo['fullName'] . ';';
+            }
+        } else {
+            // 名前衝突がない場合は通常のインポートに変換
+            $newUseStatement = 'use ' . $useInfo['fullName'] . ';';
+        }
 
         // useキーワードからセミコロンまでを削除して新しい文に置き換え
         for ($i = $usePtr; $i <= $semicolon; $i++) {

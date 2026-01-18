@@ -35,21 +35,28 @@ php_codesnifferの拡張ルール
 
 エイリアスインポート（`as`キーワードを使用したインポート）の代わりに、通常のインポートまたは名前空間の部分インポートの使用を推奨します。
 
-**例外**: 名前衝突回避のためエイリアスインポートが必須の場合は指摘しません。
+**例外**: インポートしたクラス名と同名のクラスをファイル内で定義している場合のみ、エイリアスインポートが許可されます。
 
 例:
 #### ❌️エイリアスインポートは使用しないでください 🔧
 ```php
 use Symfony\Component\HttpFoundation\Request as HttpRequest;
+// → use Symfony\Component\HttpFoundation\Request; に自動修正
 ```
-#### ✅通常のインポートを使用してください
+#### ❌️インポート間の名前衝突も部分インポートで解決してください 🔧
 ```php
-use Symfony\Component\HttpFoundation\Request;
+use Vendor1\Request as Request1;
+use Vendor2\Request as Request2;
+// → use Vendor1; と use Vendor2; に自動修正
+// 利用時: new Vendor1\Request(); new Vendor2\Request();
 ```
-#### ✅名前衝突がある場合のみエイリアスを使用できます
+#### ✅ファイル内で定義しているクラスとの名前衝突の場合のみエイリアスを使用できます
 ```php
-use Vendor1\Payment as Payment1;
-use Vendor2\Payment as Payment2;
+use Vendor1\Request as BaseRequest;
+
+class Request {
+    // ...
+}
 ```
 
 ## TypeHints
