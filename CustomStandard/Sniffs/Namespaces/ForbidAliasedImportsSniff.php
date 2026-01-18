@@ -65,7 +65,7 @@ class ForbidAliasedImportsSniff implements Sniff
 
         // エイリアスインポートを検出
         $phpcsFile->addError(
-            'Aliased imports are forbidden. Use non-aliased imports or partial namespace imports instead.',
+            'Aliased imports are forbidden. Use non-aliased imports or partial namespace imports instead. Aliases are only allowed when the imported class name conflicts with a class defined in this file.',
             $asPtr,
             'ForbidAliasedImports'
         );
