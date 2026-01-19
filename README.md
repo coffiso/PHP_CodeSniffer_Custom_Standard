@@ -17,6 +17,30 @@ php_codesnifferの拡張ルール
 関数・メソッド・無名関数・アロー関数のデフォルト引数を禁止します。全ての引数は明示的に渡す必要があります。
 
 **例外**: `@inheritdoc`アノテーションが付いているメソッドは除外されます。
+### CustomStandard.Functions.ForbidGlobalFunction
+名前空間の無いグローバル関数の定義を禁止します。全ての関数は名前空間内で定義する必要があります。
+
+**OK**:
+```php
+<?php
+
+declare(strict_types = 1);
+
+namespace App\Functions;
+
+function foo() {
+}
+```
+
+**NG**:
+```php
+<?php
+
+declare(strict_types = 1);
+
+function foo() {
+}
+```
 
 ## Strings
 ### CustomStandard.Strings.RequireDoubleQuotes 🔧
