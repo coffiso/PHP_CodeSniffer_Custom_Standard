@@ -76,6 +76,39 @@ class CommentingFormatSniff implements Sniff {
                     ];
                 }
 
+                // 単一のコメントの場合、宣言構文の前にある場合はマルチラインPHPDocに変換する
+                if (count($fixTargetTokens) === 1) {
+                    $commentLine = $tokens[$stackPtr]["line"];
+                    $isCommentForStructure = false;
+                    
+                    // コメントの後に構造が続くかチェック
+                    for ($i = $stackPtr + 1; isset($tokens[$i]) === true; $i++) {
+                        if ($tokens[$i]["line"] > $commentLine + 1) {
+                            break;
+                        }
+                        
+                        if ($tokens[$i]["line"] === $commentLine + 1 && $this->isCommentForStructure($phpcsFile, $stackPtr) === true) {
+                            $isCommentForStructure = true;
+                            break;
+                        }
+                    }
+                    
+                    if ($isCommentForStructure === true) {
+                        $baseIndent = $this->getBaseIndent($phpcsFile, $stackPtr);
+                        $body = $fixTargetTokens[0]["body"];
+                        $fix = $phpcsFile->addFixableError(
+                            self::ERROR_MESSAGE,
+                            $stackPtr,
+                            "InvalidCommentFormat"
+                        );
+                        if ($fix === true) {
+                            $phpcsFile->fixer->replaceToken($stackPtr, "/**\n{$baseIndent} * {$body}\n{$baseIndent} */\n");
+                        }
+                    }
+                    
+                    return;
+                }
+
                 if (count($fixTargetTokens) <= 1) {
                     return;
                 }
@@ -118,13 +151,23 @@ class CommentingFormatSniff implements Sniff {
         // 単一行コメント形式「#」の場合
         if (str_starts_with($content, "#") === true) {
             preg_match("/^# *(.*)$/", $content, $matches);
+            $body = $matches[1];
+            $baseIndent = $this->getBaseIndent($phpcsFile, $stackPtr);
+            
+            // 宣言構文の前にある場合はマルチラインPHPDocに変換する
+            if ($this->isCommentForStructure($phpcsFile, $stackPtr) === true) {
+                $formattedContent = "/**\n{$baseIndent} * {$body}\n{$baseIndent} */\n";
+            } else {
+                $formattedContent = "// " . $body;
+            }
+            
             $fix = $phpcsFile->addFixableError(
                 self::ERROR_MESSAGE,
                 $stackPtr,
                 "InvalidCommentFormat"
             );
             if ($fix === true) {
-                $phpcsFile->fixer->replaceToken($stackPtr, "// " . $matches[1]);
+                $phpcsFile->fixer->replaceToken($stackPtr, $formattedContent);
             }
 
             return;
@@ -139,7 +182,20 @@ class CommentingFormatSniff implements Sniff {
             preg_match("/^\/\*(.*)\*\/$/", $content, $matches);
             $body = $matches[1] ?? null;
             assert(is_string($body) === true);
-            $formattedContent = "// " . trim($body, " ") . $escapeLineBreak;
+            
+            $trimmedBody = trim($body, " ");
+            
+            // 宣言構文の前にある場合はマルチラインPHPDocに変換する
+            if ($this->isCommentForStructure($phpcsFile, $stackPtr) === true) {
+                $formattedContent = "/**\n{$baseIndent} * {$trimmedBody}\n{$baseIndent} */" . $escapeLineBreak;
+            }
+            // アノテーション(@)が含まれる場合はPHPDoc形式に変換する
+            elseif (str_contains($body, "@") === true) {
+                $formattedContent = "/** " . $trimmedBody . " */" . $escapeLineBreak;
+            } else {
+                $formattedContent = "// " . $trimmedBody . $escapeLineBreak;
+            }
+            
             $fix = $phpcsFile->addFixableError(
                 self::ERROR_MESSAGE,
                 $stackPtr,
@@ -268,7 +324,6 @@ class CommentingFormatSniff implements Sniff {
                     $phpcsFile->fixer->replaceToken($stackPtr, "");
                     $phpcsFile->fixer->replaceToken($stackPtr + 1, "// " . ltrim($tokens[$stackPtr + 1]["content"], "* "));
                     $phpcsFile->fixer->replaceToken($commentEndPtr, "");
-                    $phpcsFile->fixer->replaceToken($commentEndPtr + 1, "");
                     $phpcsFile->fixer->endChangeset();
                 }
 
@@ -370,7 +425,30 @@ class CommentingFormatSniff implements Sniff {
             $commentBody = $matches[1];
 
             // @の存在しないインラインPHPDoc形式はふさわしくないので、インラインコメントへの自動修正の対象とする
+            // ただし、宣言構文の前にある場合はマルチラインPHPDocに変換する
             if (str_contains($commentBody, "@") === false) {
+                // 宣言構文の前にある場合
+                if ($this->isCommentForStructure($phpcsFile, $closeTagPtr) === true) {
+                    $baseIndent = $this->getBaseIndent($phpcsFile, $stackPtr);
+                    $trimmedBody = trim($commentBody, " ");
+                    $fix = $phpcsFile->addFixableError(
+                        self::ERROR_MESSAGE,
+                        $stackPtr,
+                        "InvalidCommentFormat"
+                    );
+                    if ($fix === true) {
+                        $phpcsFile->fixer->beginChangeset();
+                        for ($currentPtr = $stackPtr; $currentPtr - 1 < $closeTagPtr; $currentPtr++) {
+                            $phpcsFile->fixer->replaceToken($currentPtr, "");
+                        }
+
+                        $phpcsFile->fixer->replaceToken($stackPtr, "/**\n{$baseIndent} * {$trimmedBody}\n{$baseIndent} */");
+                        $phpcsFile->fixer->endChangeset();
+                    }
+
+                    return;
+                }
+                
                 $fix = $phpcsFile->addFixableError(
                     self::ERROR_MESSAGE,
                     $stackPtr,
