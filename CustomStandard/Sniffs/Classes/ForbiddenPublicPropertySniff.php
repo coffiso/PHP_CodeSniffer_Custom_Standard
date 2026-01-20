@@ -53,7 +53,7 @@ class ForbiddenPublicPropertySniff implements Sniff
         if ($scopeModifierToken === null) {
             return;
         }
-        
+
         if ($scopeModifierToken['code'] === T_PROTECTED || $scopeModifierToken['code'] === T_PRIVATE) {
             return;
         }
@@ -69,9 +69,9 @@ class ForbiddenPublicPropertySniff implements Sniff
             return false;
         }
 
-        $classNameToken = ClassHelper::getName($file, $classTokenPosition);
+        $className = ClassHelper::getName($file, $classTokenPosition);
 
-        return StringHelper::endsWith($classNameToken, 'Sniff');
+        return StringHelper::endsWith($className, 'Sniff');
     }
 
     /**
