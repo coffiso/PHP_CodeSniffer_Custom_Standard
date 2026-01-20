@@ -12,6 +12,48 @@ php_codesniffer 用のカスタムルール集です。リポジトリ内の Sni
 🔧 = 自動修正（fixer）に対応しているルール
 
 ### Functions
+- **CustomStandard.Functions.StandaloneFunctionFileName**: スタンドアロン関数を定義する単一の PHP ファイルに対して、ファイル名とトップレベル関数名の完全一致（ケース・センシティブ）を強制します。また、ファイル名・関数名はロワーキャメルケースのみ許可し、1ファイルにトップレベル関数が2つ以上ある定義を禁止します。
+
+  - 要件:
+
+    - ファイル名（拡張子 .php を除く）とトップレベルで最初に出現する関数名が完全に一致すること（大文字小文字を区別）。
+    - ファイル名・関数名はロワーキャメルケースのみ許可（先頭小文字、アンダースコア禁止、英数字）。
+    - 1ファイルにトップレベル関数は 1 つのみ許可。クロージャやクラス・トレイト・インターフェイス内部のメソッドは対象外。
+
+  - OK:
+
+  ```php
+  <?php
+  // ファイル名: utilFunction.php
+  function utilFunction()
+  {
+      return true;
+  }
+  ```
+
+  - NG (例):
+
+  ```php
+  <?php
+  // ファイル名: utilfunction.php (小文字不一致)
+  function utilFunction()
+  {
+  }
+
+  // または
+  // ファイルに複数のトップレベル関数がある場合
+  function one() {}
+  function two() {}
+  ```
+
+  - 実行例:
+
+  ```bash
+  vendor/bin/phpcs --standard=CustomStandard path/to/utilFunction.php
+  ```
+
+  - 備考: このリポジトリには別途「名前空間のないグローバル関数を禁止する」Sniff が有効な場合があり、その場合はグローバル関数について別エラーが出ることがあります。不要であれば `ruleset.xml` で当該 Sniff を無効化できます（無効化を希望すれば私が設定を追加します）。
+
 - **CustomStandard.Functions.RequireClosureArgumentTypeHint**: 無名関数・アロー関数の引数に型ヒントを要求します。
 
   - OK:
