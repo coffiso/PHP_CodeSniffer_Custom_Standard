@@ -220,7 +220,7 @@ class CommentingFormatSniff implements Sniff {
         // 複数行コメント形式の場合
         if ($commentBeginPtr < $commentEndPtr) {
 
-            /*
+            /**
              * 開始タグの前のトークンが空白の場合、インデントされているはずなのでこれを基準インデントとして設定し、
              * コメント行全体にこのインデントを挿入して整形する。
              */
@@ -424,8 +424,10 @@ class CommentingFormatSniff implements Sniff {
             preg_match("/^\/\*\*(.+)\*\/$/", $content, $matches);
             $commentBody = $matches[1];
 
-            // @の存在しないインラインPHPDoc形式はふさわしくないので、インラインコメントへの自動修正の対象とする
-            // ただし、宣言構文の前にある場合はマルチラインPHPDocに変換する
+            /**
+             * @の存在しないインラインPHPDoc形式はふさわしくないので、インラインコメントへの自動修正の対象とする
+             * ただし、宣言構文の前にある場合はマルチラインPHPDocに変換する
+             */
             if (str_contains($commentBody, "@") === false) {
                 // 宣言構文の前にある場合
                 if ($this->isCommentForStructure($phpcsFile, $closeTagPtr) === true) {
