@@ -1,12 +1,9 @@
 # PHP_CodeSniffer Custom Standard
-php_codesniffer 用のカスタムルール集です。リポジトリ内の Sniff 実装に合わせて README を整備しています。
+php_codesniffer 用のカスタムルール集です。
 
 ## 概要
 - このパッケージは PHP_CodeSniffer (PHPCS) 向けのカスタムルール（Sniff）群を提供します。
 - ruleset は `CustomStandard/ruleset.xml` を参照してください。
-
-## 使い方（簡易）
-- Composer 経由でプロジェクトに追加し、`phpcs --standard=CustomStandard` で実行します。
 
 ## ルール一覧
 🔧 = 自動修正（fixer）に対応しているルール
@@ -45,14 +42,6 @@ php_codesniffer 用のカスタムルール集です。リポジトリ内の Sni
   function one() {}
   function two() {}
   ```
-
-  - 実行例:
-
-  ```bash
-  vendor/bin/phpcs --standard=CustomStandard path/to/utilFunction.php
-  ```
-
-  - 備考: このリポジトリには別途「名前空間のないグローバル関数を禁止する」Sniff が有効な場合があり、その場合はグローバル関数について別エラーが出ることがあります。不要であれば `ruleset.xml` で当該 Sniff を無効化できます（無効化を希望すれば私が設定を追加します）。
 
 - **CustomStandard.Functions.RequireClosureArgumentTypeHint**: 無名関数・アロー関数の引数に型ヒントを要求します。
 
