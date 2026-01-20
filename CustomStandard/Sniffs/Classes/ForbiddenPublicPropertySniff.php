@@ -50,6 +50,10 @@ class ForbiddenPublicPropertySniff implements Sniff
         }
 
         $scopeModifierToken = $this->getPropertyScopeModifier($file, $variablePointer);
+        if ($scopeModifierToken === null) {
+            return;
+        }
+        
         if ($scopeModifierToken['code'] === T_PROTECTED || $scopeModifierToken['code'] === T_PRIVATE) {
             return;
         }
@@ -61,17 +65,24 @@ class ForbiddenPublicPropertySniff implements Sniff
     private function isSniffClass(File $file, int $position): bool
     {
         $classTokenPosition = ClassHelper::getClassPointer($file, $position);
+        if ($classTokenPosition === null) {
+            return false;
+        }
+
         $classNameToken = ClassHelper::getName($file, $classTokenPosition);
 
         return StringHelper::endsWith($classNameToken, 'Sniff');
     }
 
     /**
-     * @return array{code: int|string}
+     * @return array{code: int|string}|null
      */
-    private function getPropertyScopeModifier(File $file, int $position): array
+    private function getPropertyScopeModifier(File $file, int $position): ?array
     {
         $scopeModifierPosition = TokenHelper::findPrevious($file, array_merge([T_VAR], Tokens::$scopeModifiers), $position - 1);
+        if ($scopeModifierPosition === null) {
+            return null;
+        }
 
         return $file->getTokens()[$scopeModifierPosition];
     }
