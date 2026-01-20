@@ -2,8 +2,7 @@
 php_codesniffer 用のカスタムルール集です。
 
 ## 概要
-- このパッケージは PHP_CodeSniffer (PHPCS) 向けのカスタムルール（Sniff）群を提供します。
-- ruleset は `CustomStandard/ruleset.xml` を参照してください。
+- このパッケージは PHP_CodeSniffer (PHPCS) 向けのカスタムルールを提供します。
 
 ## ルール一覧
 🔧 = 自動修正（fixer）に対応しているルール
@@ -201,7 +200,7 @@ php_codesniffer 用のカスタムルール集です。
      ```
 
 ### Classes
-- **CustomStandard.Classes.RequireReadOnlyClass** 🔧: プロパティの状況に応じてクラスを `readonly` にすることを推奨・自動修正します。クラスが `readonly` であるべきか検出し、必要に応じて `readonly` を付与したり、`readonly` 修飾子をプロパティから削除する自動修正を行います（staticプロパティや継承可能なクラス、型宣言の無いプロパティ等は自動修正対象外となる場合があります）。
+- **CustomStandard.Classes.RequireReadOnlyClass** 🔧: プロパティの状況に応じてクラスを `readonly` にすることを推奨・自動修正します。クラスが `readonly` であるべきか検出し、必要に応じて `readonly` を付与したり、`readonly` 修飾子をプロパティから削除する自動修正を行います。
 
   - OK (class を readonly として宣言し、プロパティは通常の型宣言にする例):
 
