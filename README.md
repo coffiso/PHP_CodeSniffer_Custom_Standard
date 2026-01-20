@@ -124,6 +124,13 @@ php_codesniffer 用のカスタムルール集です。リポジトリ内の Sni
   ```
 
 ### Strings
+
+ - **CustomStandard.Functions.PreferFunctionOverClass**: 単純なユーティリティクラスや単一メソッドクラスを関数定義に置き換えることを推奨します。検出対象の例:
+   - 静的メソッドのみを持ちプロパティやコンストラクタを持たないユーティリティクラス
+   - プロパティや識別子がなくメソッドを1つだけ持つクラス
+
+   - 注意: 継承や implements を使用しているクラス、コンストラクタで状態を初期化しているクラス、プロパティを持つクラスは検出対象外です。
+
  - **CustomStandard.Strings.RequireDoubleQuotes** 🔧: 文字列リテラルをダブルクォートで囲むことを推奨します。
 
    - OK:
