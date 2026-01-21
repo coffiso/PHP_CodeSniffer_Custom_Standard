@@ -200,7 +200,48 @@ php_codesniffer 用のカスタムルール集です。
      ```
 
 ### Classes
-- **CustomStandard.Classes.RequireReadOnlyClass** 🔧: プロパティの状況に応じてクラスを `readonly` にすることを推奨・自動修正します。クラスが `readonly` であるべきか検出し、必要に応じて `readonly` を付与したり、`readonly` 修飾子をプロパティから削除する自動修正を行います。
+- **CustomStandard.Classes.ForbiddenPublicProperty**: パブリックプロパティの使用を禁止し、メソッドアクセスを要求します。`{@inheritDoc}` アノテーションが付いたプロパティは除外されます（親クラスのプロパティをオーバーライドする場合）。
+
+  - OK:
+
+    ```php
+    <?php
+    class User
+    {
+        private string $name;
+        
+        public function getName(): string
+        {
+            return $this->name;
+        }
+    }
+    
+    // オーバーライドの場合
+    abstract class Model
+    {
+        public $timestamps = true;
+    }
+    
+    class Post extends Model
+    {
+        /**
+         * {@inheritDoc}
+         */
+        public $timestamps = false; // OK: {@inheritDoc}があるため許可される
+    }
+    ```
+
+  - NG:
+
+    ```php
+    <?php
+    class User
+    {
+        public string $name; // NG: パブリックプロパティは禁止
+    }
+    ```
+
+- **CustomStandard.Classes.RequireReadOnlyClass** 🔧: プロパティの状況に応じてクラスを `readonly` にすることを推奨・自動修正します。クラスが `readonly` であるべきか検出し、必要に応じて `readonly` を付与したり、`readonly` 修飾子をプロパティから削除する自動修正を行います（staticプロパティや継承可能なクラス、型宣言の無いプロパティ等は自動修正対象外となる場合があります）。
 
   - OK (class を readonly として宣言し、プロパティは通常の型宣言にする例):
 
