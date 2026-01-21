@@ -822,13 +822,19 @@ class CommentingFormatSniff implements Sniff {
             return false;
         }
 
-        if ($phpcsFile->tokenizerType === 'PHP') {
+        // Some File implementations (e.g. DummyFile) may not have tokenizerType set.
+        if (isset($phpcsFile->tokenizerType) && $phpcsFile->tokenizerType === 'PHP') {
             $content = '<?php ' . $content . ' ?>';
         }
 
         $oldErrors = ini_get('error_reporting');
         ini_set('error_reporting', 0);
         try {
+            if (isset($phpcsFile->tokenizer) === false || $phpcsFile->tokenizer === null) {
+                ini_set('error_reporting', $oldErrors);
+                return false;
+            }
+
             $tokenizerClass = get_class($phpcsFile->tokenizer);
             $tokenizer = new $tokenizerClass($content, $phpcsFile->config, $phpcsFile->eolChar);
             $stringTokens = $tokenizer->getTokens();
