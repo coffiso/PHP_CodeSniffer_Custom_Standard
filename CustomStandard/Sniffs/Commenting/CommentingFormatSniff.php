@@ -4,6 +4,8 @@ namespace CustomStandard\Sniffs\Commenting;
 
 use PHP_CodeSniffer\Files\File;
 use PHP_CodeSniffer\Sniffs\Sniff;
+use PHP_CodeSniffer\Exceptions\TokenizerException;
+use PHP_CodeSniffer\Util\Tokens;
 use SlevomatCodingStandard\Helpers\CommentHelper;
 use SlevomatCodingStandard\Helpers\PropertyHelper;
 use SlevomatCodingStandard\Helpers\TokenHelper;
@@ -11,6 +13,14 @@ use SlevomatCodingStandard\Helpers\TokenHelper;
 class CommentingFormatSniff implements Sniff {
 
     private const ERROR_MESSAGE = "This comment doesn't follow the commenting format.";
+
+    /**
+     * If a comment is more than this percentage valid code, treat it as commented-out code.
+     * Can be adjusted from the ruleset.
+     *
+     * @var int
+     */
+    public $commentedOutCodePercentage = 35;
 
     public function register() {
         return [
@@ -38,6 +48,27 @@ class CommentingFormatSniff implements Sniff {
 
         // 単一行コメント形式「//」の場合
         if (str_starts_with($content, "//") === true) {
+
+            // まず連続する単一行コメントブロックを収集し、コメントアウトされたコードなら自動修正を完全にスキップする
+            $blockBodies = [];
+            for ($i = $stackPtr;; $i++) {
+                $c = $tokens[$i]['content'] ?? '';
+                $code = $tokens[$i]['code'] ?? null;
+                if ((bool)preg_match("/^ +$/", $c) === true) {
+                    continue;
+                }
+
+                if ($code !== T_COMMENT || str_starts_with($c, "//") === false || CommentHelper::isLineComment($phpcsFile, $stackPtr) === false) {
+                    break;
+                }
+
+                preg_match("/^\/\/(.*)$/", $c, $m);
+                $blockBodies[] = trim($m[1] ?? '');
+            }
+
+            if ($this->isCommentedOutCode($phpcsFile, $blockBodies) === true) {
+                return; // コメントアウトされたコードなので何もしない
+            }
 
             if ((bool)preg_match("/^\/\/(([^ ])|( {2,}))(.*)$/", $content, $matches) === true) {
                 $fix = $phpcsFile->addFixableError(
@@ -110,6 +141,12 @@ class CommentingFormatSniff implements Sniff {
                 }
 
                 if (count($fixTargetTokens) <= 1) {
+                    return;
+                }
+
+                // コメントアウトされたコードの場合は自動変換を行わない
+                $bodies = array_map(fn(array $t): string => $t['body'], $fixTargetTokens);
+                if ($this->isCommentedOutCode($phpcsFile, $bodies) === true) {
                     return;
                 }
 
@@ -766,5 +803,106 @@ class CommentingFormatSniff implements Sniff {
                 return $commentEndPtr;
             }
         }
+    }
+
+    /**
+     * コメントブロック配列からコメントアウトされたコードか判定する
+     *
+     * @param File $phpcsFile
+     * @param string[] $bodies コメント行の本文配列
+     * @return bool
+     */
+    private function isCommentedOutCode(File $phpcsFile, array $bodies): bool {
+        $content = join("\n", $bodies);
+        $content = preg_replace('/[-=#*]{2,}/', '-', $content);
+        $content = preg_replace('/\d+/', '', $content);
+        $content = trim($content);
+
+        if ($content === '') {
+            return false;
+        }
+
+        if ($phpcsFile->tokenizerType === 'PHP') {
+            $content = '<?php ' . $content . ' ?>';
+        }
+
+        $oldErrors = ini_get('error_reporting');
+        ini_set('error_reporting', 0);
+        try {
+            $tokenizerClass = get_class($phpcsFile->tokenizer);
+            $tokenizer = new $tokenizerClass($content, $phpcsFile->config, $phpcsFile->eolChar);
+            $stringTokens = $tokenizer->getTokens();
+        } catch (TokenizerException $e) {
+            ini_set('error_reporting', $oldErrors);
+            return false;
+        }
+
+        ini_set('error_reporting', $oldErrors);
+
+        $numTokens = count($stringTokens);
+        if ($numTokens === 0) {
+            return false;
+        }
+
+        if (isset($stringTokens[0]) === false || $stringTokens[0]['code'] !== T_OPEN_TAG) {
+            return false;
+        } else {
+            array_shift($stringTokens);
+            --$numTokens;
+        }
+
+        if (isset($stringTokens[($numTokens - 1)]) === false || $stringTokens[($numTokens - 1)]['code'] !== T_CLOSE_TAG) {
+            return false;
+        } else {
+            array_pop($stringTokens);
+            --$numTokens;
+        }
+
+        if ($phpcsFile->tokenizerType === 'PHP') {
+            if (isset(Tokens::$emptyTokens[$stringTokens[($numTokens - 1)]['code']]) === false) {
+                return false;
+            }
+
+            if ($stringTokens[($numTokens - 1)]['code'] === T_WHITESPACE) {
+                array_pop($stringTokens);
+                --$numTokens;
+            }
+        }
+
+        $emptyTokens = [
+            T_WHITESPACE              => true,
+            T_STRING                  => true,
+            T_STRING_CONCAT           => true,
+            T_ENCAPSED_AND_WHITESPACE => true,
+            T_NONE                    => true,
+            T_COMMENT                 => true,
+        ];
+        $emptyTokens += Tokens::$phpcsCommentTokens;
+
+        $numCode = 0;
+        $numNonWhitespace = 0;
+        for ($i = 0, $c = count($stringTokens); $i < $c; $i++) {
+            if (isset($emptyTokens[$stringTokens[$i]['code']]) === true) {
+                // comment-like
+            } elseif (isset(Tokens::$comparisonTokens[$stringTokens[$i]['code']]) === true
+                || isset(Tokens::$arithmeticTokens[$stringTokens[$i]['code']]) === true
+                || $stringTokens[$i]['code'] === T_GOTO_LABEL
+            ) {
+                $numCode++;
+            } else {
+                $numCode++;
+            }
+
+            if ($stringTokens[$i]['code'] !== T_WHITESPACE) {
+                ++$numNonWhitespace;
+            }
+        }
+
+        if ($numNonWhitespace <= 2) {
+            return false;
+        }
+
+        $percentCode = ceil((($numCode / count($stringTokens)) * 100));
+        return $percentCode > $this->commentedOutCodePercentage;
     }
 }
