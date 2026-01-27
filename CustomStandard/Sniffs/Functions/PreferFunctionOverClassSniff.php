@@ -49,7 +49,20 @@ class PreferFunctionOverClassSniff implements Sniff
         $nonStaticMethodCount = 0;
         $hasConstructor = false;
         $hasProperties = false;
-        $hasExtendsImplements = !empty($tokens[$stackPtr]['extends']) || !empty($tokens[$stackPtr]['implements']);
+
+        // Detect if the class declaration contains extends or implements by
+        // scanning between the class name and the opening brace. The token
+        // array indices 'extends'/'implements' are not reliably present,
+        // so explicitly look for T_EXTENDS or T_IMPLEMENTS tokens.
+        $hasExtendsImplements = false;
+        for ($i = $classNamePtr + 1; $i < $openBrace; $i++) {
+            if (isset($tokens[$i]['code']) && (
+                $tokens[$i]['code'] === T_EXTENDS || $tokens[$i]['code'] === T_IMPLEMENTS
+            )) {
+                $hasExtendsImplements = true;
+                break;
+            }
+        }
 
         foreach ($members as $m) {
             if ($m['type'] === 'property') {
@@ -91,6 +104,8 @@ class PreferFunctionOverClassSniff implements Sniff
 
         // 2) single-method class without state/constructor/extends: one method (static or instance), no properties, no constructor, no extends/implements
         $isSingleMethod = ($methodCount === 1 && !$hasProperties && !$hasConstructor && !$hasExtendsImplements);
+
+
 
         if ($isStaticOnly || $isSingleMethod) {
             $className = $tokens[$classNamePtr]['content'];
