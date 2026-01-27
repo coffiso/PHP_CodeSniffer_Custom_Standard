@@ -3,6 +3,12 @@
 namespace CustomStandard\Sniffs\PHP;
 
 use PHP_CodeSniffer\Files\File;
+use PHPStan\PhpDocParser\Ast\Type\IdentifierTypeNode;
+use PHPStan\PhpDocParser\Ast\PhpDoc\ParamTagValueNode;
+use PHPStan\PhpDocParser\Ast\PhpDoc\ReturnTagValueNode;
+use PHPStan\PhpDocParser\Ast\PhpDoc\VarTagValueNode;
+use SlevomatCodingStandard\Helpers\Annotation;
+use SlevomatCodingStandard\Helpers\AnnotationHelper;
 use SlevomatCodingStandard\Helpers\FixerHelper;
 use SlevomatCodingStandard\Helpers\FunctionHelper;
 use SlevomatCodingStandard\Helpers\NamespaceHelper;
@@ -19,24 +25,35 @@ use function strtolower;
 use const T_CLOSURE;
 use const T_FN;
 use const T_FUNCTION;
+use const T_VARIABLE;
 
 /**
- * Extended ForbiddenClassesSniff that also checks parameter type hints.
+ * Extended ForbiddenClassesSniff that also checks parameter type hints and PHPDoc types.
  *
  * This sniff inherits all functionality from the original ForbiddenClassesSniff
  * (checking new, double colon, extends, implements, trait use) and additionally
- * checks function/method/closure/arrow function parameter type hints.
+ * checks:
+ * - Function/method/closure/arrow function parameter type hints
+ * - PHPDoc @param annotations
+ * - PHPDoc @return annotations
+ * - PHPDoc @var annotations
  */
 class ForbiddenClassesParameterTypesSniff extends ForbiddenClassesSniff
 {
 	public const CODE_FORBIDDEN_PARAMETER_TYPE = 'ForbiddenParameterType';
+	public const CODE_FORBIDDEN_PHPDOC_PARAMETER_TYPE = 'ForbiddenPhpDocParameterType';
+	public const CODE_FORBIDDEN_PHPDOC_RETURN_TYPE = 'ForbiddenPhpDocReturnType';
+	public const CODE_FORBIDDEN_PHPDOC_VAR_TYPE = 'ForbiddenPhpDocVarType';
 
 	/** @var list<string> */
 	private static array $simpleTypes = [
 		'int',
+		'integer',
 		'float',
+		'double',
 		'string',
 		'bool',
+		'boolean',
 		'array',
 		'callable',
 		'iterable',
@@ -50,6 +67,29 @@ class ForbiddenClassesParameterTypesSniff extends ForbiddenClassesSniff
 		'self',
 		'parent',
 		'static',
+		'resource',
+		'scalar',
+		'numeric',
+		'positive-int',
+		'negative-int',
+		'non-positive-int',
+		'non-negative-int',
+		'non-zero-int',
+		'int-mask',
+		'int-mask-of',
+		'class-string',
+		'callable-string',
+		'numeric-string',
+		'non-empty-string',
+		'non-falsy-string',
+		'truthy-string',
+		'literal-string',
+		'list',
+		'non-empty-list',
+		'non-empty-array',
+		'array-key',
+		'key-of',
+		'value-of',
 	];
 
 	/** @var array<string, (string|null)>|null */
@@ -64,7 +104,7 @@ class ForbiddenClassesParameterTypesSniff extends ForbiddenClassesSniff
 
 		// Always add function tokens to check parameter types when forbiddenClasses is configured
 		if (count($this->forbiddenClasses) > 0) {
-			$functionTokens = [T_FUNCTION, T_CLOSURE, T_FN];
+			$functionTokens = [T_FUNCTION, T_CLOSURE, T_FN, T_VARIABLE];
 			foreach ($functionTokens as $token) {
 				if (!in_array($token, $parentTokens, true)) {
 					$parentTokens[] = $token;
@@ -86,6 +126,12 @@ class ForbiddenClassesParameterTypesSniff extends ForbiddenClassesSniff
 			return;
 		}
 
+		// Check @var annotations on variables/properties
+		if ($tokenCode === T_VARIABLE) {
+			$this->checkVarAnnotation($phpcsFile, $tokenPointer);
+			return;
+		}
+
 		// For other tokens, delegate to parent
 		parent::process($phpcsFile, $tokenPointer);
 	}
@@ -95,17 +141,14 @@ class ForbiddenClassesParameterTypesSniff extends ForbiddenClassesSniff
 	 */
 	private function checkParameterTypeHints(File $phpcsFile, int $functionPointer): void
 	{
-		$parametersTypeHints = FunctionHelper::getParametersTypeHints($phpcsFile, $functionPointer);
-
-		if (count($parametersTypeHints) === 0) {
-			return;
-		}
-
 		$forbiddenClasses = $this->getNormalizedForbiddenClasses();
 
 		if (count($forbiddenClasses) === 0) {
 			return;
 		}
+
+		// Check native type hints
+		$parametersTypeHints = FunctionHelper::getParametersTypeHints($phpcsFile, $functionPointer);
 
 		foreach ($parametersTypeHints as $parameterName => $typeHint) {
 			if ($typeHint === null) {
@@ -113,6 +156,202 @@ class ForbiddenClassesParameterTypesSniff extends ForbiddenClassesSniff
 			}
 
 			$this->checkTypeHint($phpcsFile, $typeHint, $parameterName, $forbiddenClasses);
+		}
+
+		// Check PHPDoc @param annotations
+		$this->checkPhpDocParameterTypes($phpcsFile, $functionPointer, $forbiddenClasses);
+
+		// Check PHPDoc @return annotations
+		$this->checkPhpDocReturnType($phpcsFile, $functionPointer, $forbiddenClasses);
+	}
+
+	/**
+	 * Check PHPDoc @param annotations for forbidden classes.
+	 *
+	 * @param array<string, (string|null)> $forbiddenClasses
+	 */
+	private function checkPhpDocParameterTypes(File $phpcsFile, int $functionPointer, array $forbiddenClasses): void
+	{
+		$paramAnnotations = FunctionHelper::getParametersAnnotations($phpcsFile, $functionPointer);
+
+		foreach ($paramAnnotations as $annotation) {
+			if ($annotation->isInvalid()) {
+				continue;
+			}
+
+			$value = $annotation->getValue();
+
+			// Skip TypelessParamTagValueNode (e.g., @param $foo description)
+			if (!$value instanceof ParamTagValueNode) {
+				continue;
+			}
+
+			// Get all IdentifierTypeNode from the annotation type
+			$identifierNodes = AnnotationHelper::getAnnotationNodesByType($value->type, IdentifierTypeNode::class);
+
+			foreach ($identifierNodes as $identifierNode) {
+				$typeName = $identifierNode->name;
+
+				// Skip simple/built-in types
+				if ($this->isSimpleType($typeName)) {
+					continue;
+				}
+
+				// Resolve to fully qualified name
+				$fullyQualifiedName = NamespaceHelper::resolveClassName($phpcsFile, $typeName, $functionPointer);
+
+				if (!array_key_exists($fullyQualifiedName, $forbiddenClasses)) {
+					continue;
+				}
+
+				$alternative = $forbiddenClasses[$fullyQualifiedName];
+
+				if ($alternative === null) {
+					$phpcsFile->addError(
+						sprintf('Usage of %s in PHPDoc @param is forbidden.', $fullyQualifiedName),
+						$annotation->getStartPointer(),
+						self::CODE_FORBIDDEN_PHPDOC_PARAMETER_TYPE,
+					);
+				} else {
+					$phpcsFile->addError(
+						sprintf(
+							'Usage of %s in PHPDoc @param is forbidden, use %s instead.',
+							$fullyQualifiedName,
+							$alternative,
+						),
+						$annotation->getStartPointer(),
+						self::CODE_FORBIDDEN_PHPDOC_PARAMETER_TYPE,
+					);
+				}
+			}
+		}
+	}
+
+	/**
+	 * Check PHPDoc @return annotations for forbidden classes.
+	 *
+	 * @param array<string, (string|null)> $forbiddenClasses
+	 */
+	private function checkPhpDocReturnType(File $phpcsFile, int $functionPointer, array $forbiddenClasses): void
+	{
+		$returnAnnotations = AnnotationHelper::getAnnotations($phpcsFile, $functionPointer, '@return');
+
+		foreach ($returnAnnotations as $annotation) {
+			if ($annotation->isInvalid()) {
+				continue;
+			}
+
+			$value = $annotation->getValue();
+
+			if (!$value instanceof ReturnTagValueNode) {
+				continue;
+			}
+
+			// Get all IdentifierTypeNode from the annotation type
+			$identifierNodes = AnnotationHelper::getAnnotationNodesByType($value->type, IdentifierTypeNode::class);
+
+			foreach ($identifierNodes as $identifierNode) {
+				$typeName = $identifierNode->name;
+
+				// Skip simple/built-in types
+				if ($this->isSimpleType($typeName)) {
+					continue;
+				}
+
+				// Resolve to fully qualified name
+				$fullyQualifiedName = NamespaceHelper::resolveClassName($phpcsFile, $typeName, $functionPointer);
+
+				if (!array_key_exists($fullyQualifiedName, $forbiddenClasses)) {
+					continue;
+				}
+
+				$alternative = $forbiddenClasses[$fullyQualifiedName];
+
+				if ($alternative === null) {
+					$phpcsFile->addError(
+						sprintf('Usage of %s in PHPDoc @return is forbidden.', $fullyQualifiedName),
+						$annotation->getStartPointer(),
+						self::CODE_FORBIDDEN_PHPDOC_RETURN_TYPE,
+					);
+				} else {
+					$phpcsFile->addError(
+						sprintf(
+							'Usage of %s in PHPDoc @return is forbidden, use %s instead.',
+							$fullyQualifiedName,
+							$alternative,
+						),
+						$annotation->getStartPointer(),
+						self::CODE_FORBIDDEN_PHPDOC_RETURN_TYPE,
+					);
+				}
+			}
+		}
+	}
+
+	/**
+	 * Check PHPDoc @var annotations for forbidden classes.
+	 *
+	 * @param array<string, (string|null)> $forbiddenClasses
+	 */
+	private function checkVarAnnotation(File $phpcsFile, int $variablePointer): void
+	{
+		$forbiddenClasses = $this->getNormalizedForbiddenClasses();
+
+		if (count($forbiddenClasses) === 0) {
+			return;
+		}
+
+		$varAnnotations = AnnotationHelper::getAnnotations($phpcsFile, $variablePointer, '@var');
+
+		foreach ($varAnnotations as $annotation) {
+			if ($annotation->isInvalid()) {
+				continue;
+			}
+
+			$value = $annotation->getValue();
+
+			if (!$value instanceof VarTagValueNode) {
+				continue;
+			}
+
+			// Get all IdentifierTypeNode from the annotation type
+			$identifierNodes = AnnotationHelper::getAnnotationNodesByType($value->type, IdentifierTypeNode::class);
+
+			foreach ($identifierNodes as $identifierNode) {
+				$typeName = $identifierNode->name;
+
+				// Skip simple/built-in types
+				if ($this->isSimpleType($typeName)) {
+					continue;
+				}
+
+				// Resolve to fully qualified name
+				$fullyQualifiedName = NamespaceHelper::resolveClassName($phpcsFile, $typeName, $variablePointer);
+
+				if (!array_key_exists($fullyQualifiedName, $forbiddenClasses)) {
+					continue;
+				}
+
+				$alternative = $forbiddenClasses[$fullyQualifiedName];
+
+				if ($alternative === null) {
+					$phpcsFile->addError(
+						sprintf('Usage of %s in PHPDoc @var is forbidden.', $fullyQualifiedName),
+						$annotation->getStartPointer(),
+						self::CODE_FORBIDDEN_PHPDOC_VAR_TYPE,
+					);
+				} else {
+					$phpcsFile->addError(
+						sprintf(
+							'Usage of %s in PHPDoc @var is forbidden, use %s instead.',
+							$fullyQualifiedName,
+							$alternative,
+						),
+						$annotation->getStartPointer(),
+						self::CODE_FORBIDDEN_PHPDOC_VAR_TYPE,
+					);
+				}
+			}
 		}
 	}
 
