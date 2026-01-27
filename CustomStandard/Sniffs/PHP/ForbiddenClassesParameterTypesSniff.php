@@ -16,6 +16,7 @@ use SlevomatCodingStandard\Helpers\TokenHelper;
 use SlevomatCodingStandard\Helpers\TypeHint;
 use SlevomatCodingStandard\Sniffs\PHP\ForbiddenClassesSniff;
 use function array_key_exists;
+use function array_merge;
 use function count;
 use function in_array;
 use function preg_split;
@@ -37,13 +38,26 @@ use const T_VARIABLE;
  * - PHPDoc @param annotations
  * - PHPDoc @return annotations
  * - PHPDoc @var annotations
+ *
+ * Additional option:
+ * - forbiddenAsTypeHintOnly: Classes that are forbidden only as type hints,
+ *   but allowed for new, extends, implements, trait use, and static access (::).
  */
 class ForbiddenClassesParameterTypesSniff extends ForbiddenClassesSniff
 {
 	public const CODE_FORBIDDEN_PARAMETER_TYPE = 'ForbiddenParameterType';
+	public const CODE_FORBIDDEN_RETURN_TYPE = 'ForbiddenReturnType';
 	public const CODE_FORBIDDEN_PHPDOC_PARAMETER_TYPE = 'ForbiddenPhpDocParameterType';
 	public const CODE_FORBIDDEN_PHPDOC_RETURN_TYPE = 'ForbiddenPhpDocReturnType';
 	public const CODE_FORBIDDEN_PHPDOC_VAR_TYPE = 'ForbiddenPhpDocVarType';
+
+	/**
+	 * Classes forbidden only as type hints (parameter types, return types, PHPDoc types).
+	 * Usage with new, extends, implements, trait use, and :: is allowed.
+	 *
+	 * @var array<string, (string|null)>
+	 */
+	public array $forbiddenAsTypeHintOnly = [];
 
 	/** @var list<string> */
 	private static array $simpleTypes = [
@@ -95,6 +109,9 @@ class ForbiddenClassesParameterTypesSniff extends ForbiddenClassesSniff
 	/** @var array<string, (string|null)>|null */
 	private ?array $normalizedForbiddenClasses = null;
 
+	/** @var array<string, (string|null)>|null */
+	private ?array $normalizedForbiddenAsTypeHintOnly = null;
+
 	/**
 	 * @return array<int, (int|string)>
 	 */
@@ -102,8 +119,8 @@ class ForbiddenClassesParameterTypesSniff extends ForbiddenClassesSniff
 	{
 		$parentTokens = parent::register();
 
-		// Always add function tokens to check parameter types when forbiddenClasses is configured
-		if (count($this->forbiddenClasses) > 0) {
+		// Add function tokens to check parameter/return types when forbiddenClasses or forbiddenAsTypeHintOnly is configured
+		if (count($this->forbiddenClasses) > 0 || count($this->forbiddenAsTypeHintOnly) > 0) {
 			$functionTokens = [T_FUNCTION, T_CLOSURE, T_FN, T_VARIABLE];
 			foreach ($functionTokens as $token) {
 				if (!in_array($token, $parentTokens, true)) {
@@ -141,7 +158,7 @@ class ForbiddenClassesParameterTypesSniff extends ForbiddenClassesSniff
 	 */
 	private function checkParameterTypeHints(File $phpcsFile, int $functionPointer): void
 	{
-		$forbiddenClasses = $this->getNormalizedForbiddenClasses();
+		$forbiddenClasses = $this->getAllForbiddenTypesForTypeHints();
 
 		if (count($forbiddenClasses) === 0) {
 			return;
@@ -157,6 +174,9 @@ class ForbiddenClassesParameterTypesSniff extends ForbiddenClassesSniff
 
 			$this->checkTypeHint($phpcsFile, $typeHint, $parameterName, $forbiddenClasses);
 		}
+
+		// Check native return type hint
+		$this->checkReturnTypeHint($phpcsFile, $functionPointer, $forbiddenClasses);
 
 		// Check PHPDoc @param annotations
 		$this->checkPhpDocParameterTypes($phpcsFile, $functionPointer, $forbiddenClasses);
@@ -295,7 +315,7 @@ class ForbiddenClassesParameterTypesSniff extends ForbiddenClassesSniff
 	 */
 	private function checkVarAnnotation(File $phpcsFile, int $variablePointer): void
 	{
-		$forbiddenClasses = $this->getNormalizedForbiddenClasses();
+		$forbiddenClasses = $this->getAllForbiddenTypesForTypeHints();
 
 		if (count($forbiddenClasses) === 0) {
 			return;
@@ -350,6 +370,70 @@ class ForbiddenClassesParameterTypesSniff extends ForbiddenClassesSniff
 						$annotation->getStartPointer(),
 						self::CODE_FORBIDDEN_PHPDOC_VAR_TYPE,
 					);
+				}
+			}
+		}
+	}
+
+	/**
+	 * Check native return type hint for forbidden classes.
+	 *
+	 * @param array<string, (string|null)> $forbiddenClasses
+	 */
+	private function checkReturnTypeHint(File $phpcsFile, int $functionPointer, array $forbiddenClasses): void
+	{
+		$tokens = $phpcsFile->getTokens();
+		$returnTypeHint = FunctionHelper::findReturnTypeHint($phpcsFile, $functionPointer);
+
+		if ($returnTypeHint === null) {
+			return;
+		}
+
+		$startPointer = $returnTypeHint->getStartPointer();
+		$endPointer = $returnTypeHint->getEndPointer();
+
+		for ($pointer = $startPointer; $pointer <= $endPointer; $pointer++) {
+			if (!in_array($tokens[$pointer]['code'], TokenHelper::NAME_TOKEN_CODES, true)) {
+				continue;
+			}
+
+			$typeName = $tokens[$pointer]['content'];
+
+			// Skip simple/built-in types
+			if ($this->isSimpleType($typeName)) {
+				continue;
+			}
+
+			// Resolve to fully qualified name
+			$fullyQualifiedName = NamespaceHelper::resolveClassName($phpcsFile, $typeName, $pointer);
+
+			if (!array_key_exists($fullyQualifiedName, $forbiddenClasses)) {
+				continue;
+			}
+
+			$alternative = $forbiddenClasses[$fullyQualifiedName];
+
+			if ($alternative === null) {
+				$phpcsFile->addError(
+					sprintf('Usage of %s as return type is forbidden.', $fullyQualifiedName),
+					$pointer,
+					self::CODE_FORBIDDEN_RETURN_TYPE,
+				);
+			} else {
+				$fix = $phpcsFile->addFixableError(
+					sprintf(
+						'Usage of %s as return type is forbidden, use %s instead.',
+						$fullyQualifiedName,
+						$alternative,
+					),
+					$pointer,
+					self::CODE_FORBIDDEN_RETURN_TYPE,
+				);
+
+				if ($fix) {
+					$phpcsFile->fixer->beginChangeset();
+					FixerHelper::change($phpcsFile, $pointer, $pointer, $alternative);
+					$phpcsFile->fixer->endChangeset();
 				}
 			}
 		}
@@ -458,6 +542,45 @@ class ForbiddenClassesParameterTypesSniff extends ForbiddenClassesSniff
 		}
 
 		return $this->normalizedForbiddenClasses;
+	}
+
+	/**
+	 * Get normalized forbiddenAsTypeHintOnly classes (cached).
+	 *
+	 * @return array<string, (string|null)>
+	 */
+	private function getNormalizedForbiddenAsTypeHintOnly(): array
+	{
+		if ($this->normalizedForbiddenAsTypeHintOnly !== null) {
+			return $this->normalizedForbiddenAsTypeHintOnly;
+		}
+
+		$this->normalizedForbiddenAsTypeHintOnly = [];
+
+		foreach ($this->forbiddenAsTypeHintOnly as $forbiddenClass => $alternative) {
+			$normalizedForbidden = $this->normalizeClassName((string) $forbiddenClass);
+			$normalizedAlternative = $this->normalizeClassName($alternative);
+
+			if ($normalizedForbidden !== null) {
+				$this->normalizedForbiddenAsTypeHintOnly[$normalizedForbidden] = $normalizedAlternative;
+			}
+		}
+
+		return $this->normalizedForbiddenAsTypeHintOnly;
+	}
+
+	/**
+	 * Get all forbidden types for type hint checking.
+	 * Merges forbiddenClasses and forbiddenAsTypeHintOnly.
+	 *
+	 * @return array<string, (string|null)>
+	 */
+	private function getAllForbiddenTypesForTypeHints(): array
+	{
+		return array_merge(
+			$this->getNormalizedForbiddenClasses(),
+			$this->getNormalizedForbiddenAsTypeHintOnly()
+		);
 	}
 
 	/**
