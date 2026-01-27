@@ -27,6 +27,10 @@ final class ForbiddenTypeUsageSniff implements Sniff
     public array $forbiddenTypes = [];
 
     private static array $error = [];
+    /** @var array<int,array<string,bool>> 既に報告したエラーの記録（重複防止） */
+    private static array $reported = [];
+    /** @var bool 初期化済みフラグ（禁止型キーの正規化など） */
+    private bool $initialized = false;
 
 
 
@@ -70,8 +74,16 @@ final class ForbiddenTypeUsageSniff implements Sniff
      */
     public function process(File $phpcsFile, $stackPtr): void
     {
+        // 初回処理時に設定値の正規化を行う
+        if ($this->initialized === false) {
+            $this->normalizeForbiddenTypes();
+            $this->initialized = true;
+        }
+
         $tokens = $phpcsFile->getTokens();
         $token = $tokens[$stackPtr];
+
+        // no-op
 
         match ($token['code']) {
             T_FUNCTION, T_FN => $this->processFunctionLike($phpcsFile, $stackPtr),
@@ -81,11 +93,14 @@ final class ForbiddenTypeUsageSniff implements Sniff
         };
 
         if (self::$error !== []) {
-            $phpcsFile->addError(
-                (self::$error['message'] === '' || self::$error['message'] === null) ? 'Forbidden type found.' : self::$error['message'],
-                self::$error['stackPtr'],
-                self::$error['code']
-            );
+            $msg = (self::$error['message'] === '' || self::$error['message'] === null) ? 'Forbidden type found.' : self::$error['message'];
+            $ptr = self::$error['stackPtr'];
+            if (!isset(self::$reported[$ptr][$msg])) {
+                $phpcsFile->addError($msg, $ptr, self::$error['code']);
+                self::$reported[$ptr][$msg] = true;
+            }
+            // reset for this invocation
+            self::$error = [];
         }
     }
 
@@ -392,23 +407,48 @@ final class ForbiddenTypeUsageSniff implements Sniff
         // use文から解決された型名も取得
         $resolvedTypeName = $this->resolveFullTypeName($phpcsFile, $tokenPtr);
 
+        // (debug logs removed)
+
         // 禁止型かどうかをチェック（優先順位：FQN > 解決された型名 > 短縮型名）
-        if ($fullTypeName && isset($this->forbiddenTypes[$fullTypeName])) {
-            $message = $this->forbiddenTypes[$fullTypeName] === ''
-                ? "Type '{$resolvedTypeName}' is forbidden."
-                : $this->forbiddenTypes[$fullTypeName];
-            self::$error = ['message' => $message, 'stackPtr' => $tokenPtr, 'code' => 'ForbiddenTypeUsage'];
-        } elseif ($resolvedTypeName && isset($this->forbiddenTypes[$resolvedTypeName])) {
-            $message = $this->forbiddenTypes[$resolvedTypeName] === ''
-                ? "Type '{$resolvedTypeName}' is forbidden."
-                : $this->forbiddenTypes[$resolvedTypeName];
-            self::$error = ['message' => $message, 'stackPtr' => $tokenPtr, 'code' => 'ForbiddenTypeUsage'];
-        } elseif (isset($this->forbiddenTypes[$shortTypeName])) {
-            $message = $this->forbiddenTypes[$shortTypeName] === ''
-                ? "Type '{$resolvedTypeName}' is forbidden."
-                : $this->forbiddenTypes[$shortTypeName];
-            self::$error = ['message' => $message, 'stackPtr' => $tokenPtr, 'code' => 'ForbiddenTypeUsage'];
+        $normFull = $fullTypeName !== null ? preg_replace('/\\\\+/', '|', $fullTypeName) : null;
+        $normResolved = $resolvedTypeName !== null ? preg_replace('/\\\\+/', '|', $resolvedTypeName) : null;
+        $normShort = preg_replace('/\\\\+/', '|', $shortTypeName);
+
+        foreach ($this->forbiddenTypes as $configKey => $configMessage) {
+            $normConfig = preg_replace('/\\\\+/', '|', $configKey);
+
+            if ($fullTypeName !== null && $normConfig === $normFull) {
+                $message = $configMessage === '' ? "Type '{$resolvedTypeName}' is forbidden." : $configMessage;
+                self::$error = ['message' => $message, 'stackPtr' => $tokenPtr, 'code' => 'ForbiddenTypeUsage'];
+                break;
+            }
+
+            if ($resolvedTypeName !== null && $normConfig === $normResolved) {
+                $message = $configMessage === '' ? "Type '{$resolvedTypeName}' is forbidden." : $configMessage;
+                self::$error = ['message' => $message, 'stackPtr' => $tokenPtr, 'code' => 'ForbiddenTypeUsage'];
+                break;
+            }
+
+            if ($normConfig === $normShort) {
+                $message = $configMessage === '' ? "Type '{$resolvedTypeName}' is forbidden." : $configMessage;
+                self::$error = ['message' => $message, 'stackPtr' => $tokenPtr, 'code' => 'ForbiddenTypeUsage'];
+                break;
+            }
         }
+    }
+
+    /**
+     * 禁止型マップのキーを正規化（バックスラッシュ連続を単一に揃える）
+     */
+    private function normalizeForbiddenTypes(): void
+    {
+        $new = [];
+        foreach ($this->forbiddenTypes as $key => $val) {
+            // 連続するバックスラッシュを単一にする
+            $normalizedKey = preg_replace('/\\+/', '\\', $key);
+            $new[$normalizedKey] = $val;
+        }
+        $this->forbiddenTypes = $new;
     }
 
     /**
