@@ -45,6 +45,13 @@ class RequireReadOnlyClassSniff implements Sniff {
 
     /**
      * クラス全体をチェックして、readonly classへの昇華が必要か判定する
+     *
+     * readonly classの制約:
+     * - 型のついていないプロパティ、静的プロパティを宣言することはできない
+     * - readonlyクラスをreadonlyクラスでextendsすることは可能だが、
+     *   readonlyクラスを非readonlyクラスでextendsしたり、その逆は禁止
+     *
+     * 安全にreadonly classに変換できないケースではエラーを出さない
      */
     private function processClass(File $phpcsFile, int $classPtr): void {
         $tokens = $phpcsFile->getTokens();
@@ -54,18 +61,20 @@ class RequireReadOnlyClassSniff implements Sniff {
             return;
         }
 
-        // readonly classかどうかをチェック
-        $isReadonlyClass = $this->isReadonlyClass($phpcsFile, $classPtr);
+        // 既にreadonly classの場合はスキップ
+        if ($this->isReadonlyClass($phpcsFile, $classPtr)) {
+            return;
+        }
 
-        // 継承しているクラスの場合は、readonly classへの昇華を提案するのみ
+        // 継承しているクラスの場合は安全に変換できないためスキップ
+        // （親クラスがreadonlyかどうか静的解析で判断できないため）
         if ($this->isExtendingClass($phpcsFile, $classPtr)) {
-            if (!$isReadonlyClass) {
-                $phpcsFile->addError(
-                    'Consider declaring the class as readonly if possible',
-                    $classPtr,
-                    'ConsiderReadOnlyClass'
-                );
-            }
+            return;
+        }
+
+        // 継承可能なクラス（abstract または non-final）の場合は安全に変換できないためスキップ
+        // （サブクラスもreadonlyにする必要があり影響範囲を検証できないため）
+        if ($this->isInheritableClass($phpcsFile, $classPtr)) {
             return;
         }
 
@@ -87,105 +96,67 @@ class RequireReadOnlyClassSniff implements Sniff {
             if ($property['has_readonly']) {
                 $readonlyCount++;
             }
-            // 型指定がないプロパティをチェック
             if (!$property['has_type']) {
                 $hasUntypedProperties = true;
             }
         }
 
-        // プロパティが全て static の場合は、readonly classへの昇華を提案するのみ
-        if (count($properties) > 0 && $nonStaticCount === 0) {
-            if (!$isReadonlyClass) {
-                $phpcsFile->addError(
-                    'Consider declaring the class as readonly if possible',
-                    $classPtr,
-                    'ConsiderReadOnlyClass'
-                );
-            }
+        // readonly classではstaticプロパティを持てないためスキップ
+        if ($hasStaticProperties) {
             return;
         }
 
-        // 全てのプロパティがreadonlyの場合、またはnon-staticプロパティが存在しない場合、readonly classに昇華すべき
-        if (($readonlyCount === $nonStaticCount && $readonlyCount > 0) || $nonStaticCount === 0) {
-            if (!$isReadonlyClass) {
-                // 継承可能なクラス（abstract または non-final）の場合は自動修正を無効化
-                $isInheritable = $this->isInheritableClass($phpcsFile, $classPtr);
+        // readonly classでは全プロパティに型指定が必要なためスキップ
+        if ($hasUntypedProperties) {
+            return;
+        }
 
-                // staticプロパティが存在する場合、または継承可能なクラスの場合、
-                // または型指定のないプロパティが存在する場合は自動修正を無効化
-                // readonly classではstaticプロパティを持てず、全プロパティに型指定が必要なため
-                if ($isInheritable || $hasStaticProperties || $hasUntypedProperties) {
-                    // 継承可能なクラス、staticプロパティが存在、または型なしプロパティが存在する場合はエラーのみ（自動修正なし）
-                    $phpcsFile->addError(
-                        'Consider declaring the class as readonly if possible',
-                        $classPtr,
-                        'ShouldBeReadOnlyClass'
-                    );
-                } else {
-                    // 継承不可能でstaticプロパティも無く型もあるクラス（final）の場合は自動修正可能
-                    $fix = $phpcsFile->addFixableError(
-                        'All properties are readonly. Class should be declared as readonly and readonly modifiers should be removed from properties',
-                        $classPtr,
-                        'ShouldBeReadOnlyClass'
-                    );
+        // 全てのnon-staticプロパティがreadonlyの場合のみ、readonly classへの昇華を提案（自動修正付き）
+        if ($readonlyCount === $nonStaticCount && $readonlyCount > 0) {
+            $fix = $phpcsFile->addFixableError(
+                'All properties are readonly. Class should be declared as readonly and readonly modifiers should be removed from properties',
+                $classPtr,
+                'ShouldBeReadOnlyClass'
+            );
 
-                    if ($fix === true) {
-                        // classキーワードより前にあるfinal, abstractなどの修飾子を探し、
-                        // readonlyをそれらの前（最も早い位置）に追加する
-                        $phpcsFile->fixer->beginChangeset();
+            if ($fix === true) {
+                $phpcsFile->fixer->beginChangeset();
 
-                        // classキーワードの前を遡って、final/abstractを探す
-                        $insertBeforePtr = $classPtr;
-                        $checkPtr = $classPtr - 1;
-                        while ($checkPtr > 0) {
-                            if ($tokens[$checkPtr]['code'] === T_WHITESPACE ||
-                                $tokens[$checkPtr]['code'] === T_COMMENT ||
-                                $tokens[$checkPtr]['code'] === T_DOC_COMMENT) {
-                                $checkPtr--;
-                                continue;
-                            }
+                // classキーワードの前を遡って、final/abstractを探し、readonlyをそれらの前に追加する
+                $insertBeforePtr = $classPtr;
+                $checkPtr = $classPtr - 1;
+                while ($checkPtr > 0) {
+                    if ($tokens[$checkPtr]['code'] === T_WHITESPACE ||
+                        $tokens[$checkPtr]['code'] === T_COMMENT ||
+                        $tokens[$checkPtr]['code'] === T_DOC_COMMENT) {
+                        $checkPtr--;
+                        continue;
+                    }
 
-                            if ($tokens[$checkPtr]['code'] === T_FINAL ||
-                                $tokens[$checkPtr]['code'] === T_ABSTRACT) {
-                                $insertBeforePtr = $checkPtr;
-                                $checkPtr--;
-                                continue;
-                            }
+                    if ($tokens[$checkPtr]['code'] === T_FINAL ||
+                        $tokens[$checkPtr]['code'] === T_ABSTRACT) {
+                        $insertBeforePtr = $checkPtr;
+                        $checkPtr--;
+                        continue;
+                    }
 
-                            break;
+                    break;
+                }
+
+                $phpcsFile->fixer->addContentBefore($insertBeforePtr, 'readonly ');
+
+                // 全てのプロパティからreadonlyを削除
+                foreach ($properties as $property) {
+                    if ($property['has_readonly'] && $property['readonly_ptr'] !== null) {
+                        $phpcsFile->fixer->replaceToken($property['readonly_ptr'], '');
+                        $nextPtr = $property['readonly_ptr'] + 1;
+                        if (isset($tokens[$nextPtr]) && $tokens[$nextPtr]['code'] === T_WHITESPACE) {
+                            $phpcsFile->fixer->replaceToken($nextPtr, '');
                         }
-
-                        $phpcsFile->fixer->addContentBefore($insertBeforePtr, 'readonly ');
-
-                        // 全てのプロパティからreadonlyを削除
-                        foreach ($properties as $property) {
-                            if ($property['has_readonly'] && $property['readonly_ptr'] !== null) {
-                                // readonlyキーワードとその後の空白を削除
-                                $phpcsFile->fixer->replaceToken($property['readonly_ptr'], '');
-                                $nextPtr = $property['readonly_ptr'] + 1;
-                                if (isset($tokens[$nextPtr]) && $tokens[$nextPtr]['code'] === T_WHITESPACE) {
-                                    $phpcsFile->fixer->replaceToken($nextPtr, '');
-                                }
-                            }
-                        }
-                        $phpcsFile->fixer->endChangeset();
                     }
                 }
+                $phpcsFile->fixer->endChangeset();
             }
-        } elseif ($readonlyCount > 0 && !$isReadonlyClass) {
-            // 1つでもreadonlyがある場合はreadonly classへの昇華を提案
-            $phpcsFile->addError(
-                'Consider declaring the class as readonly if possible',
-                $classPtr,
-                'ConsiderReadOnlyClass'
-            );
-        } elseif ($readonlyCount === 0 && !$isReadonlyClass) {
-            // readonlyプロパティが1つもない場合もreadonly classへの昇華を提案
-            $phpcsFile->addError(
-                'Consider declaring the class as readonly if possible',
-                $classPtr,
-                'ConsiderReadOnlyClass'
-            );
         }
     }
 
