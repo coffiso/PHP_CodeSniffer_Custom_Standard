@@ -6,6 +6,7 @@ use PHP_CodeSniffer\Files\File;
 use PHP_CodeSniffer\Sniffs\Sniff;
 use PHP_CodeSniffer\Util\Tokens;
 use SlevomatCodingStandard\Helpers\ClassHelper;
+use SlevomatCodingStandard\Helpers\AttributeHelper;
 use SlevomatCodingStandard\Helpers\DocCommentHelper;
 use SlevomatCodingStandard\Helpers\PropertyHelper;
 use SlevomatCodingStandard\Helpers\StringHelper;
@@ -41,6 +42,11 @@ class ForbiddenPublicPropertySniff implements Sniff
 
         // {@inheritDoc}が存在する場合は無視
         if (DocCommentHelper::hasInheritdocAnnotation($file, $variablePointer) === true) {
+            return;
+        }
+
+        // #[\Override] 属性が存在する場合は無視
+        if (AttributeHelper::hasAttribute($file, $variablePointer, "\\Override") === true) {
             return;
         }
 

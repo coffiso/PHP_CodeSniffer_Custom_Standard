@@ -4,6 +4,7 @@ namespace CustomStandard\Sniffs\Classes;
 
 use PHP_CodeSniffer\Files\File;
 use PHP_CodeSniffer\Sniffs\Sniff;
+use SlevomatCodingStandard\Helpers\AttributeHelper;
 use SlevomatCodingStandard\Helpers\DocCommentHelper;
 use SlevomatCodingStandard\Helpers\PropertyHelper;
 
@@ -183,6 +184,11 @@ class RequireReadOnlyClassSniff implements Sniff {
          * PHPDocに`inheritDoc`アノテーションが存在する場合はオーバーライドしたプロパティとみなし、エラーを発生させない。
          */
         if (DocCommentHelper::hasInheritdocAnnotation($phpcsFile, $kindPtr) === true) {
+            return;
+        }
+
+        // #[\Override] 属性が存在する場合はオーバーライドしたプロパティとみなす
+        if (AttributeHelper::hasAttribute($phpcsFile, $kindPtr, "\\Override") === true) {
             return;
         }
 
