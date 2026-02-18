@@ -107,7 +107,7 @@ class CommentingFormatSniff implements Sniff {
                     ];
                 }
 
-                // 単一のコメントの場合、宣言構文の前にある場合はマルチラインPHPDocに変換する
+                // 単一のコメントの場合、宣言構文の前にある場合はインラインPHPDocに変換する
                 if (count($fixTargetTokens) === 1) {
                     $commentLine = $tokens[$stackPtr]["line"];
                     $isCommentForStructure = false;
@@ -125,7 +125,6 @@ class CommentingFormatSniff implements Sniff {
                     }
                     
                     if ($isCommentForStructure === true) {
-                        $baseIndent = $this->getBaseIndent($phpcsFile, $stackPtr);
                         $body = $fixTargetTokens[0]["body"];
                         $fix = $phpcsFile->addFixableError(
                             self::ERROR_MESSAGE,
@@ -133,7 +132,7 @@ class CommentingFormatSniff implements Sniff {
                             "InvalidCommentFormat"
                         );
                         if ($fix === true) {
-                            $phpcsFile->fixer->replaceToken($stackPtr, "/**\n{$baseIndent} * {$body}\n{$baseIndent} */\n");
+                            $phpcsFile->fixer->replaceToken($stackPtr, "/** {$body} */\n");
                         }
                     }
                     
@@ -191,9 +190,9 @@ class CommentingFormatSniff implements Sniff {
             $body = $matches[1];
             $baseIndent = $this->getBaseIndent($phpcsFile, $stackPtr);
             
-            // 宣言構文の前にある場合はマルチラインPHPDocに変換する
+            // 宣言構文の前にある場合はインラインPHPDocに変換する
             if ($this->isCommentForStructure($phpcsFile, $stackPtr) === true) {
-                $formattedContent = "/**\n{$baseIndent} * {$body}\n{$baseIndent} */\n";
+                $formattedContent = "/** {$body} */\n";
             } else {
                 $formattedContent = "// " . $body;
             }
@@ -222,9 +221,9 @@ class CommentingFormatSniff implements Sniff {
             
             $trimmedBody = trim($body, " ");
             
-            // 宣言構文の前にある場合はマルチラインPHPDocに変換する
+            // 宣言構文の前にある場合はインラインPHPDocに変換する
             if ($this->isCommentForStructure($phpcsFile, $stackPtr) === true) {
-                $formattedContent = "/**\n{$baseIndent} * {$trimmedBody}\n{$baseIndent} */" . $escapeLineBreak;
+                $formattedContent = "/** {$trimmedBody} */" . $escapeLineBreak;
             }
             // アノテーション(@)が含まれる場合はPHPDoc形式に変換する
             elseif (str_contains($body, "@") === true) {
@@ -350,6 +349,9 @@ class CommentingFormatSniff implements Sniff {
 
             // 複数行コメント形式だが本文が1行しかない場合、1行コメント形式に変換する
             if ($commentEndPtr - $stackPtr === 2) {
+                $singleBody = ltrim($tokens[$stackPtr + 1]["content"], "* ");
+                $isForStructure = $this->isCommentForStructure($phpcsFile, $commentEndPtr);
+
                 $fix = $phpcsFile->addFixableError(
                     self::ERROR_MESSAGE,
                     $stackPtr + 1,
@@ -358,8 +360,14 @@ class CommentingFormatSniff implements Sniff {
 
                 if ($fix === true) {
                     $phpcsFile->fixer->beginChangeset();
-                    $phpcsFile->fixer->replaceToken($stackPtr, "");
-                    $phpcsFile->fixer->replaceToken($stackPtr + 1, "// " . ltrim($tokens[$stackPtr + 1]["content"], "* "));
+                    if ($isForStructure === true) {
+                        // 宣言構文の前にある場合はインラインPHPDocに変換する
+                        $phpcsFile->fixer->replaceToken($stackPtr, "/** " . $singleBody . " */");
+                        $phpcsFile->fixer->replaceToken($stackPtr + 1, "");
+                    } else {
+                        $phpcsFile->fixer->replaceToken($stackPtr, "");
+                        $phpcsFile->fixer->replaceToken($stackPtr + 1, "// " . $singleBody);
+                    }
                     $phpcsFile->fixer->replaceToken($commentEndPtr, "");
                     $phpcsFile->fixer->endChangeset();
                 }
@@ -466,23 +474,24 @@ class CommentingFormatSniff implements Sniff {
              * ただし、宣言構文の前にある場合はマルチラインPHPDocに変換する
              */
             if (str_contains($commentBody, "@") === false) {
-                // 宣言構文の前にある場合
+                // 宣言構文の前にある場合はインラインPHPDoc形式に整形する
                 if ($this->isCommentForStructure($phpcsFile, $closeTagPtr) === true) {
-                    $baseIndent = $this->getBaseIndent($phpcsFile, $stackPtr);
                     $trimmedBody = trim($commentBody, " ");
-                    $fix = $phpcsFile->addFixableError(
-                        self::ERROR_MESSAGE,
-                        $stackPtr,
-                        "InvalidCommentFormat"
-                    );
-                    if ($fix === true) {
-                        $phpcsFile->fixer->beginChangeset();
-                        for ($currentPtr = $stackPtr; $currentPtr - 1 < $closeTagPtr; $currentPtr++) {
-                            $phpcsFile->fixer->replaceToken($currentPtr, "");
-                        }
+                    if ($commentBody !== " {$trimmedBody} ") {
+                        $fix = $phpcsFile->addFixableError(
+                            self::ERROR_MESSAGE,
+                            $stackPtr,
+                            "InvalidCommentFormat"
+                        );
+                        if ($fix === true) {
+                            $phpcsFile->fixer->beginChangeset();
+                            for ($currentPtr = $stackPtr; $currentPtr - 1 < $closeTagPtr; $currentPtr++) {
+                                $phpcsFile->fixer->replaceToken($currentPtr, "");
+                            }
 
-                        $phpcsFile->fixer->replaceToken($stackPtr, "/**\n{$baseIndent} * {$trimmedBody}\n{$baseIndent} */");
-                        $phpcsFile->fixer->endChangeset();
+                            $phpcsFile->fixer->replaceToken($stackPtr, "/** {$trimmedBody} */");
+                            $phpcsFile->fixer->endChangeset();
+                        }
                     }
 
                     return;
@@ -671,16 +680,26 @@ class CommentingFormatSniff implements Sniff {
             }
         }
 
-        // 宣言構文に対するコメントの場合、インライン形式への自動変換は行わない
-        if ($this->isCommentForStructure($phpcsFile, $closeTagPtr) === true) {
+        // 複数行コメント形式だが本文が1行しかない場合、インラインPHPDocまたは1行コメント形式に変換する
+        $isForStructure = $this->isCommentForStructure($phpcsFile, $closeTagPtr);
+
+        // 宣言構文に対するコメントで複数行の場合はそのまま保持する
+        if ($isForStructure === true && count($formattedDocCommentTokens) !== 3) {
             return;
         }
 
-        // 複数行コメント形式だが本文が1行しかない場合、1行コメント形式に変換する
+        // 複数行コメント形式だが本文が1行しかない場合
         if (count($formattedDocCommentTokens) === 3) {
             $centerBodyToken = $formattedDocCommentTokens[1];
             preg_match("/^ * \* (.*)\n$/", $centerBodyToken["lineContent"], $matches);
             $body = trim($matches[1]);
+
+            // 宣言構文の前、または@タグ含みの場合はインラインPHPDocに変換する
+            if ($isForStructure === true || str_contains($body, "@") === true) {
+                $replacement = "/** {$body} */";
+            } else {
+                $replacement = "// {$body}";
+            }
 
             $fix = $phpcsFile->addFixableError(
                 self::ERROR_MESSAGE,
@@ -695,7 +714,7 @@ class CommentingFormatSniff implements Sniff {
                     $phpcsFile->fixer->replaceToken($ptr, "");
                 }
 
-                $phpcsFile->fixer->replaceToken($targetPointers[0], "/** {$body} */");
+                $phpcsFile->fixer->replaceToken($targetPointers[0], $replacement);
                 $phpcsFile->fixer->endChangeset();
             }
         }
@@ -742,7 +761,7 @@ class CommentingFormatSniff implements Sniff {
     }
 
     /**
-     * 構造 (class, interface, trait, enum) に対するコメントかどうかを判定する
+     * 宣言構文 (class, interface, trait, enum, function, const, property) に対するコメントかどうかを判定する
      *
      * @param File $phpcsFile
      * @param int $commentCloseTagPtr コメント終了タグのスタックポインタ
@@ -751,33 +770,82 @@ class CommentingFormatSniff implements Sniff {
      */
     private function isCommentForStructure(File $phpcsFile, int $commentCloseTagPtr): bool {
         $tokens = $phpcsFile->getTokens();
-        $foundTokenPtr = TokenHelper::findNextExcluding(
-            $phpcsFile,
-            [
-                T_WHITESPACE,
-                T_PUBLIC,
-                T_PROTECTED,
-                T_PRIVATE,
-                T_STATIC,
-                T_FINAL,
-                T_READONLY,
-            ],
-            $commentCloseTagPtr + 1
-        );
-        if (is_int($foundTokenPtr) === true
-            && in_array(
-                $tokens[$foundTokenPtr]["code"] ?? [],
-                [
-                    T_CLASS,
-                    T_INTERFACE,
-                    T_TRAIT,
-                    T_ENUM,
-                    T_FUNCTION,
-                    T_ABSTRACT,
-                ],
-                true
-            ) === true) {
-            return true;
+
+        // アクセス修飾子トークン（これを通過した場合、T_VARIABLEはプロパティと判定できる）
+        $modifierTokens = [
+            T_PUBLIC,
+            T_PROTECTED,
+            T_PRIVATE,
+            T_STATIC,
+            T_FINAL,
+            T_READONLY,
+            T_VAR,
+        ];
+
+        // スキップ対象のトークン（空白・型関連）
+        $typeTokens = [
+            T_WHITESPACE,
+            T_NULLABLE,
+            T_STRING,
+            T_NAME_FULLY_QUALIFIED,
+            T_NAME_QUALIFIED,
+            T_NAME_RELATIVE,
+            T_TYPE_UNION,
+            T_TYPE_INTERSECTION,
+            T_NULL,
+            T_FALSE,
+            T_TRUE,
+            T_SELF,
+            T_PARENT,
+            T_ARRAY,
+            T_CALLABLE,
+            T_OPEN_PARENTHESIS,
+            T_CLOSE_PARENTHESIS,
+        ];
+
+        // 宣言構文として認識するトークン
+        $structureTokens = [
+            T_CLASS,
+            T_INTERFACE,
+            T_TRAIT,
+            T_ENUM,
+            T_FUNCTION,
+            T_ABSTRACT,
+            T_CONST,
+        ];
+
+        $seenModifier = false;
+        $ptr = $commentCloseTagPtr + 1;
+        $numTokens = count($tokens);
+        while ($ptr < $numTokens) {
+            $code = $tokens[$ptr]["code"] ?? null;
+
+            // PHP 8 属性（#[...]）はattribute_closerまでジャンプしてスキップする
+            if ($code === T_ATTRIBUTE) {
+                $ptr = ($tokens[$ptr]["attribute_closer"] ?? $ptr) + 1;
+                continue;
+            }
+
+            // 修飾子トークンはスキップしつつ、修飾子を見たことを記録する
+            if (in_array($code, $modifierTokens, true) === true) {
+                $seenModifier = true;
+                $ptr++;
+                continue;
+            }
+
+            // 空白・型トークンはスキップする
+            if (in_array($code, $typeTokens, true) === true) {
+                $ptr++;
+                continue;
+            }
+
+            // T_VARIABLEはプロパティの場合のみ構造として扱う（修飾子が先行している場合）
+            if ($code === T_VARIABLE) {
+                return $seenModifier;
+            }
+
+            // スキップ対象でないトークンに到達した
+            return in_array($code, $structureTokens, true);
         }
 
         return false;
