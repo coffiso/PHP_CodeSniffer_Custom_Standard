@@ -107,7 +107,7 @@ class CommentingFormatSniff implements Sniff {
                     ];
                 }
 
-                // 単一のコメントの場合、宣言構文の前にある場合はインラインPHPDocに変換する
+                // 単一のコメントの場合、宣言構文の前にある場合はマルチラインPHPDocに変換する
                 if (count($fixTargetTokens) === 1) {
                     $commentLine = $tokens[$stackPtr]["line"];
                     $isCommentForStructure = false;
@@ -126,13 +126,19 @@ class CommentingFormatSniff implements Sniff {
                     
                     if ($isCommentForStructure === true) {
                         $body = $fixTargetTokens[0]["body"];
+                        $baseIndent = $this->getBaseIndent($phpcsFile, $stackPtr);
+                        $isProperty = $this->isCommentForProperty($phpcsFile, $stackPtr);
                         $fix = $phpcsFile->addFixableError(
                             self::ERROR_MESSAGE,
                             $stackPtr,
                             "InvalidCommentFormat"
                         );
                         if ($fix === true) {
-                            $phpcsFile->fixer->replaceToken($stackPtr, "/** {$body} */\n");
+                            if ($isProperty === true) {
+                                $phpcsFile->fixer->replaceToken($stackPtr, "/** {$body} */\n");
+                            } else {
+                                $phpcsFile->fixer->replaceToken($stackPtr, "/**\n{$baseIndent} * {$body}\n{$baseIndent} */\n");
+                            }
                         }
                     }
                     
@@ -190,9 +196,13 @@ class CommentingFormatSniff implements Sniff {
             $body = $matches[1];
             $baseIndent = $this->getBaseIndent($phpcsFile, $stackPtr);
             
-            // 宣言構文の前にある場合はインラインPHPDocに変換する
+            // 宣言構文の前にある場合はPHPDocに変換する
             if ($this->isCommentForStructure($phpcsFile, $stackPtr) === true) {
-                $formattedContent = "/** {$body} */\n";
+                if ($this->isCommentForProperty($phpcsFile, $stackPtr) === true) {
+                    $formattedContent = "/** {$body} */\n";
+                } else {
+                    $formattedContent = "/**\n{$baseIndent} * {$body}\n{$baseIndent} */\n";
+                }
             } else {
                 $formattedContent = "// " . $body;
             }
@@ -221,9 +231,13 @@ class CommentingFormatSniff implements Sniff {
             
             $trimmedBody = trim($body, " ");
             
-            // 宣言構文の前にある場合はインラインPHPDocに変換する
+            // 宣言構文の前にある場合はPHPDocに変換する
             if ($this->isCommentForStructure($phpcsFile, $stackPtr) === true) {
-                $formattedContent = "/** {$trimmedBody} */" . $escapeLineBreak;
+                if ($this->isCommentForProperty($phpcsFile, $stackPtr) === true) {
+                    $formattedContent = "/** {$trimmedBody} */" . $escapeLineBreak;
+                } else {
+                    $formattedContent = "/**\n{$baseIndent} * {$trimmedBody}\n{$baseIndent} */" . $escapeLineBreak;
+                }
             }
             // アノテーション(@)が含まれる場合はPHPDoc形式に変換する
             elseif (str_contains($body, "@") === true) {
@@ -349,7 +363,7 @@ class CommentingFormatSniff implements Sniff {
 
             // 複数行コメント形式だが本文が1行しかない場合、1行コメント形式に変換する
             if ($commentEndPtr - $stackPtr === 2) {
-                $singleBody = ltrim($tokens[$stackPtr + 1]["content"], "* ");
+                $singleBody = trim(ltrim($tokens[$stackPtr + 1]["content"], "* "));
                 $isForStructure = $this->isCommentForStructure($phpcsFile, $commentEndPtr);
 
                 $fix = $phpcsFile->addFixableError(
@@ -358,17 +372,25 @@ class CommentingFormatSniff implements Sniff {
                     "InvalidCommentFormat"
                 );
 
+                $isForProperty = $this->isCommentForProperty($phpcsFile, $commentEndPtr);
+
                 if ($fix === true) {
                     $phpcsFile->fixer->beginChangeset();
-                    if ($isForStructure === true) {
-                        // 宣言構文の前にある場合はインラインPHPDocに変換する
+                    if ($isForStructure === true && $isForProperty === false) {
+                        // 宣言構文（プロパティ以外）の前にある場合はマルチラインPHPDocに変換する
+                        $phpcsFile->fixer->replaceToken($stackPtr, "/**\n");
+                        $phpcsFile->fixer->replaceToken($stackPtr + 1, "{$baseIndent} * {$singleBody}\n");
+                        $phpcsFile->fixer->replaceToken($commentEndPtr, "{$baseIndent} */");
+                    } elseif ($isForProperty === true) {
+                        // プロパティの前にある場合はインラインPHPDocに変換する
                         $phpcsFile->fixer->replaceToken($stackPtr, "/** " . $singleBody . " */");
                         $phpcsFile->fixer->replaceToken($stackPtr + 1, "");
+                        $phpcsFile->fixer->replaceToken($commentEndPtr, "");
                     } else {
                         $phpcsFile->fixer->replaceToken($stackPtr, "");
                         $phpcsFile->fixer->replaceToken($stackPtr + 1, "// " . $singleBody);
+                        $phpcsFile->fixer->replaceToken($commentEndPtr, "");
                     }
-                    $phpcsFile->fixer->replaceToken($commentEndPtr, "");
                     $phpcsFile->fixer->endChangeset();
                 }
 
@@ -469,14 +491,11 @@ class CommentingFormatSniff implements Sniff {
             preg_match("/^\/\*\*(.+)\*\/$/", $content, $matches);
             $commentBody = $matches[1];
 
-            /**
-             * @の存在しないインラインPHPDoc形式はふさわしくないので、インラインコメントへの自動修正の対象とする
-             * ただし、宣言構文の前にある場合はマルチラインPHPDocに変換する
-             */
-            if (str_contains($commentBody, "@") === false) {
-                // 宣言構文の前にある場合はインラインPHPDoc形式に整形する
-                if ($this->isCommentForStructure($phpcsFile, $closeTagPtr) === true) {
-                    $trimmedBody = trim($commentBody, " ");
+            // 宣言構文の前にある場合
+            if ($this->isCommentForStructure($phpcsFile, $closeTagPtr) === true) {
+                $trimmedBody = trim($commentBody, " ");
+                // プロパティの場合はインラインPHPDocを維持する
+                if ($this->isCommentForProperty($phpcsFile, $closeTagPtr) === true) {
                     if ($commentBody !== " {$trimmedBody} ") {
                         $fix = $phpcsFile->addFixableError(
                             self::ERROR_MESSAGE,
@@ -496,7 +515,31 @@ class CommentingFormatSniff implements Sniff {
 
                     return;
                 }
-                
+
+                // プロパティ以外の構造体の場合はマルチラインPHPDocに変換する
+                $baseIndent = $this->getBaseIndent($phpcsFile, $stackPtr);
+                $fix = $phpcsFile->addFixableError(
+                    self::ERROR_MESSAGE,
+                    $stackPtr,
+                    "InvalidCommentFormat"
+                );
+                if ($fix === true) {
+                    $phpcsFile->fixer->beginChangeset();
+                    for ($currentPtr = $stackPtr; $currentPtr - 1 < $closeTagPtr; $currentPtr++) {
+                        $phpcsFile->fixer->replaceToken($currentPtr, "");
+                    }
+
+                    $phpcsFile->fixer->replaceToken($stackPtr, "/**\n{$baseIndent} * {$trimmedBody}\n{$baseIndent} */");
+                    $phpcsFile->fixer->endChangeset();
+                }
+
+                return;
+            }
+
+            /**
+             * @の存在しないインラインPHPDoc形式はふさわしくないので、インラインコメントへの自動修正の対象とする
+             */
+            if (str_contains($commentBody, "@") === false) {
                 $fix = $phpcsFile->addFixableError(
                     self::ERROR_MESSAGE,
                     $stackPtr,
@@ -683,8 +726,9 @@ class CommentingFormatSniff implements Sniff {
         // 複数行コメント形式だが本文が1行しかない場合、インラインPHPDocまたは1行コメント形式に変換する
         $isForStructure = $this->isCommentForStructure($phpcsFile, $closeTagPtr);
 
-        // 宣言構文に対するコメントで複数行の場合はそのまま保持する
-        if ($isForStructure === true && count($formattedDocCommentTokens) !== 3) {
+        // 宣言構文に対するコメントで複数行の場合はそのまま保持する（プロパティは本文1行ならインラインに折り畳む）
+        $isForProperty = $this->isCommentForProperty($phpcsFile, $closeTagPtr);
+        if ($isForStructure === true && $isForProperty === false) {
             return;
         }
 
@@ -694,8 +738,8 @@ class CommentingFormatSniff implements Sniff {
             preg_match("/^ * \* (.*)\n$/", $centerBodyToken["lineContent"], $matches);
             $body = trim($matches[1]);
 
-            // 宣言構文の前、または@タグ含みの場合はインラインPHPDocに変換する
-            if ($isForStructure === true || str_contains($body, "@") === true) {
+            // @タグ含みの場合はインラインPHPDocに変換する
+            if (str_contains($body, "@") === true) {
                 $replacement = "/** {$body} */";
             } else {
                 $replacement = "// {$body}";
@@ -846,6 +890,76 @@ class CommentingFormatSniff implements Sniff {
 
             // スキップ対象でないトークンに到達した
             return in_array($code, $structureTokens, true);
+        }
+
+        return false;
+    }
+
+    /**
+     * プロパティに対するコメントかどうかを判定する
+     *
+     * @param File $phpcsFile
+     * @param int $commentCloseTagPtr コメント終了タグのスタックポインタ
+     *
+     * @return bool
+     */
+    private function isCommentForProperty(File $phpcsFile, int $commentCloseTagPtr): bool {
+        $tokens = $phpcsFile->getTokens();
+
+        $modifierTokens = [
+            T_PUBLIC,
+            T_PROTECTED,
+            T_PRIVATE,
+            T_STATIC,
+            T_FINAL,
+            T_READONLY,
+            T_VAR,
+        ];
+
+        $typeTokens = [
+            T_WHITESPACE,
+            T_NULLABLE,
+            T_STRING,
+            T_NAME_FULLY_QUALIFIED,
+            T_NAME_QUALIFIED,
+            T_NAME_RELATIVE,
+            T_TYPE_UNION,
+            T_TYPE_INTERSECTION,
+            T_NULL,
+            T_FALSE,
+            T_TRUE,
+            T_SELF,
+            T_PARENT,
+            T_ARRAY,
+            T_CALLABLE,
+            T_OPEN_PARENTHESIS,
+            T_CLOSE_PARENTHESIS,
+        ];
+
+        $seenModifier = false;
+        $ptr = $commentCloseTagPtr + 1;
+        $numTokens = count($tokens);
+        while ($ptr < $numTokens) {
+            $code = $tokens[$ptr]["code"] ?? null;
+
+            if ($code === T_ATTRIBUTE) {
+                $ptr = ($tokens[$ptr]["attribute_closer"] ?? $ptr) + 1;
+                continue;
+            }
+
+            if (in_array($code, $modifierTokens, true) === true) {
+                $seenModifier = true;
+                $ptr++;
+                continue;
+            }
+
+            if (in_array($code, $typeTokens, true) === true) {
+                $ptr++;
+                continue;
+            }
+
+            // T_VARIABLEに到達し、修飾子を見ていればプロパティ
+            return $code === T_VARIABLE && $seenModifier;
         }
 
         return false;
