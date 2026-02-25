@@ -63,6 +63,11 @@ class InheritDocToOverrideSniff implements Sniff {
             if (FunctionHelper::isMethod($phpcsFile, $ownerPointer) === false) {
                 return;
             }
+
+            // コンストラクタは #[\Override] を適用できないため対象外
+            if (FunctionHelper::getName($phpcsFile, $ownerPointer) === '__construct') {
+                return;
+            }
         } elseif ($ownerCode === T_VARIABLE) {
             // プロパティの場合: PHP 8.5以上のみ適用
             if ($phpVersion < self::PHP_85) {
