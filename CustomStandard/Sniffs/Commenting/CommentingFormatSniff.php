@@ -58,11 +58,11 @@ class CommentingFormatSniff implements Sniff {
                     continue;
                 }
 
-                if ($code !== T_COMMENT || str_starts_with($c, "//") === false || CommentHelper::isLineComment($phpcsFile, $stackPtr) === false) {
+                if ($code !== T_COMMENT || str_starts_with($c, "//") === false || CommentHelper::isLineComment($phpcsFile, $i) === false) {
                     break;
                 }
 
-                preg_match("/^\/\/(.*)$/", $c, $m);
+                preg_match("/^\\/\\/(.*)$/", $c, $m);
                 $blockBodies[] = trim($m[1] ?? '');
             }
 
@@ -95,11 +95,11 @@ class CommentingFormatSniff implements Sniff {
                         continue;
                     }
 
-                    if ($code !== T_COMMENT || str_starts_with($content, "//") === false || CommentHelper::isLineComment($phpcsFile, $stackPtr) === false) {
+                    if ($code !== T_COMMENT || str_starts_with($content, "//") === false || CommentHelper::isLineComment($phpcsFile, $i) === false) {
                         break;
                     }
 
-                    preg_match("/^\/\/(.*)$/", $content, $matches);
+                    preg_match("/^\\/\\/(.*)$/", $content, $matches);
                     $body = trim($matches[1] ?? "");
                     $fixTargetTokens[] = [
                         "body" => $body,
@@ -864,7 +864,7 @@ class CommentingFormatSniff implements Sniff {
     private function getCommentCloseTagPtr(File $phpcsFile, int $beginPtr): int | null {
         $tokens = $phpcsFile->getTokens();
         for ($i = $beginPtr;; $i++) {
-            $commentEndPtr = $phpcsFile->findNext(types: T_COMMENT, start: $i);
+            $commentEndPtr = $phpcsFile->findNext(T_COMMENT, $i);
             if (is_int($commentEndPtr) === false) {
                 return null;
             }
@@ -947,8 +947,6 @@ class CommentingFormatSniff implements Sniff {
 
         $emptyTokens = [
             T_WHITESPACE              => true,
-            T_STRING                  => true,
-            T_STRING_CONCAT           => true,
             T_ENCAPSED_AND_WHITESPACE => true,
             T_NONE                    => true,
             T_COMMENT                 => true,
@@ -978,7 +976,11 @@ class CommentingFormatSniff implements Sniff {
             return false;
         }
 
-        $percentCode = ceil((($numCode / count($stringTokens)) * 100));
+        if ($numNonWhitespace === 0) {
+            return false;
+        }
+
+        $percentCode = ceil((($numCode / $numNonWhitespace) * 100));
         return $percentCode > $this->commentedOutCodePercentage;
     }
 }
