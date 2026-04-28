@@ -821,21 +821,34 @@ class CommentingFormatSniff implements Sniff {
      */
     private function isCommentForStructure(File $phpcsFile, int $commentCloseTagPtr): bool {
         $tokens = $phpcsFile->getTokens();
-        $foundTokenPtr = TokenHelper::findNextExcluding(
-            $phpcsFile,
-            [
-                T_WHITESPACE,
-                T_PUBLIC,
-                T_PROTECTED,
-                T_PRIVATE,
-                T_STATIC,
-                T_FINAL,
-                T_READONLY,
-            ],
-            $commentCloseTagPtr + 1
-        );
-        if (is_int($foundTokenPtr) === true
-            && in_array(
+        $searchFrom = $commentCloseTagPtr + 1;
+
+        while (true) {
+            $foundTokenPtr = TokenHelper::findNextExcluding(
+                $phpcsFile,
+                [
+                    T_WHITESPACE,
+                    T_PUBLIC,
+                    T_PROTECTED,
+                    T_PRIVATE,
+                    T_STATIC,
+                    T_FINAL,
+                    T_READONLY,
+                ],
+                $searchFrom
+            );
+
+            if (is_int($foundTokenPtr) === false) {
+                return false;
+            }
+
+            // 属性（#[...]）はスキップして、その先のトークンを再検索する
+            if ($tokens[$foundTokenPtr]["code"] === T_ATTRIBUTE) {
+                $searchFrom = ($tokens[$foundTokenPtr]["attribute_closer"] ?? $foundTokenPtr) + 1;
+                continue;
+            }
+
+            return in_array(
                 $tokens[$foundTokenPtr]["code"] ?? [],
                 [
                     T_CLASS,
@@ -846,11 +859,8 @@ class CommentingFormatSniff implements Sniff {
                     T_ABSTRACT,
                 ],
                 true
-            ) === true) {
-            return true;
+            );
         }
-
-        return false;
     }
 
     /**
