@@ -13,14 +13,7 @@ use SlevomatCodingStandard\Helpers\TokenHelper;
 class CommentingFormatSniff implements Sniff {
 
     private const ERROR_MESSAGE = "This comment doesn't follow the commenting format.";
-
-    /**
-     * If a comment is more than this percentage valid code, treat it as commented-out code.
-     * Can be adjusted from the ruleset.
-     *
-     * @var int
-     */
-    public $commentedOutCodePercentage = 35;
+    private const COMMENTED_OUT_CODE_PERCENTAGE = 35;
 
     public function register() {
         return [
@@ -46,166 +39,9 @@ class CommentingFormatSniff implements Sniff {
         $tokens = $phpcsFile->getTokens();
         $content = $tokens[$stackPtr]["content"];
 
-        // 単一行コメント形式「//」の場合
-        if (str_starts_with($content, "//") === true) {
-
-            // まず連続する単一行コメントブロックを収集し、コメントアウトされたコードなら自動修正を完全にスキップする
-            $blockBodies = [];
-            for ($i = $stackPtr;; $i++) {
-                $c = $tokens[$i]['content'] ?? '';
-                $code = $tokens[$i]['code'] ?? null;
-                if ((bool)preg_match("/^ +$/", $c) === true) {
-                    continue;
-                }
-
-                if ($code !== T_COMMENT || str_starts_with($c, "//") === false || CommentHelper::isLineComment($phpcsFile, $i) === false) {
-                    break;
-                }
-
-                preg_match("/^\\/\\/(.*)$/", $c, $m);
-                $blockBodies[] = trim($m[1] ?? '');
-            }
-
-            if ($this->isCommentedOutCode($phpcsFile, $blockBodies) === true) {
-                return; // コメントアウトされたコードなので何もしない
-            }
-
-            if ((bool)preg_match("/^\/\/(([^ ])|( {2,}))(.*)$/", $content, $matches) === true) {
-                $fix = $phpcsFile->addFixableError(
-                    self::ERROR_MESSAGE,
-                    $stackPtr,
-                    "InvalidCommentFormat"
-                );
-                if ($fix === true) {
-                    $phpcsFile->fixer->replaceToken($stackPtr, "// " . ($matches[2] ?? "") . $matches[4] . "\n");
-                }
-
-                return;
-            }
-
-            // 1行コメント形式が連続して複数行に出現する場合は、複数行コメント形式に変換する
-            (function () use ($phpcsFile, $stackPtr, $tokens): void {
-
-                $fixTargetTokens = [];
-
-                for ($i = $stackPtr;; $i++) {
-                    $content = $tokens[$i]["content"] ?? "";
-                    $code = $tokens[$i]["code"] ?? null;
-                    if ((bool)preg_match("/^ +$/", $content) === true) {
-                        continue;
-                    }
-
-                    if ($code !== T_COMMENT || str_starts_with($content, "//") === false || CommentHelper::isLineComment($phpcsFile, $i) === false) {
-                        break;
-                    }
-
-                    preg_match("/^\\/\\/(.*)$/", $content, $matches);
-                    $body = trim($matches[1] ?? "");
-                    $fixTargetTokens[] = [
-                        "body" => $body,
-                        "pointer" => $i,
-                    ];
-                }
-
-                // 単一のコメントの場合、宣言構文の前にある場合はマルチラインPHPDocに変換する
-                if (count($fixTargetTokens) === 1) {
-                    $commentLine = $tokens[$stackPtr]["line"];
-                    $isCommentForStructure = false;
-                    
-                    // コメントの後に構造が続くかチェック
-                    for ($i = $stackPtr + 1; isset($tokens[$i]) === true; $i++) {
-                        if ($tokens[$i]["line"] > $commentLine + 1) {
-                            break;
-                        }
-                        
-                        if ($tokens[$i]["line"] === $commentLine + 1 && $this->isCommentForStructure($phpcsFile, $stackPtr) === true) {
-                            $isCommentForStructure = true;
-                            break;
-                        }
-                    }
-                    
-                    if ($isCommentForStructure === true) {
-                        $baseIndent = $this->getBaseIndent($phpcsFile, $stackPtr);
-                        $body = $fixTargetTokens[0]["body"];
-                        $fix = $phpcsFile->addFixableError(
-                            self::ERROR_MESSAGE,
-                            $stackPtr,
-                            "InvalidCommentFormat"
-                        );
-                        if ($fix === true) {
-                            $phpcsFile->fixer->replaceToken($stackPtr, "/**\n{$baseIndent} * {$body}\n{$baseIndent} */\n");
-                        }
-                    }
-                    
-                    return;
-                }
-
-                if (count($fixTargetTokens) <= 1) {
-                    return;
-                }
-
-                // コメントアウトされたコードの場合は自動変換を行わない
-                $bodies = array_map(fn(array $t): string => $t['body'], $fixTargetTokens);
-                if ($this->isCommentedOutCode($phpcsFile, $bodies) === true) {
-                    return;
-                }
-
-                $fix = false;
-                foreach ($fixTargetTokens as $index => $token) {
-                    $body = (function () use ($fixTargetTokens, $index, $token): string {
-                        if ($index === 0) {
-                            return "/**\n * {$token["body"]}\n";
-                        }
-
-                        if ($index === array_key_last($fixTargetTokens)) {
-                            return " * {$token["body"]}\n */\n";
-                        }
-
-                        return " * {$token["body"]}\n";
-                    })();
-                    $fix = $phpcsFile->addFixableError(
-                        self::ERROR_MESSAGE,
-                        $token["pointer"],
-                        "InvalidCommentFormat"
-                    );
-                    $fixTargetTokens[$index]["body"] = $body;
-                }
-
-                if ($fix === true) {
-                    $phpcsFile->fixer->beginChangeset();
-                    foreach ($fixTargetTokens as $token) {
-                        $phpcsFile->fixer->replaceToken($token["pointer"], $token["body"]);
-                    }
-
-                    $phpcsFile->fixer->endChangeset();
-                }
-
-            })();
-
-            return;
-        }
-
-        // 単一行コメント形式「#」の場合
-        if (str_starts_with($content, "#") === true) {
-            $body = $this->extractHashCommentBody($content);
-            $baseIndent = $this->getBaseIndent($phpcsFile, $stackPtr);
-            
-            // 宣言構文の前にある場合はマルチラインPHPDocに変換する
-            if ($this->isCommentForStructure($phpcsFile, $stackPtr) === true) {
-                $formattedContent = "/**\n{$baseIndent} * {$body}\n{$baseIndent} */\n";
-            } else {
-                $formattedContent = "// " . $body;
-            }
-            
-            $fix = $phpcsFile->addFixableError(
-                self::ERROR_MESSAGE,
-                $stackPtr,
-                "InvalidCommentFormat"
-            );
-            if ($fix === true) {
-                $phpcsFile->fixer->replaceToken($stackPtr, $formattedContent);
-            }
-
+        // 行コメントはブロック先頭から一度だけ処理する。
+        if ($this->isSupportedLineComment($phpcsFile, $stackPtr) === true) {
+            $this->lineCommentBlockProcess($phpcsFile, $stackPtr);
             return;
         }
 
@@ -723,21 +559,6 @@ class CommentingFormatSniff implements Sniff {
     }
 
     /**
-     * # コメントの本文を抽出する
-     *
-     * @param string $content
-     *
-     * @return string
-     */
-    private function extractHashCommentBody(string $content): string {
-        if ((bool)preg_match("/^# *(.*)$/", $content, $matches) === true) {
-            return $matches[1] ?? "";
-        }
-
-        return ltrim($content, "# ");
-    }
-
-    /**
      * インライン PHPDoc の本文を抽出する
      *
      * @param string $content
@@ -811,6 +632,208 @@ class CommentingFormatSniff implements Sniff {
         return (bool)preg_match("/^ +$/", $beforeContent) === true ? $beforeContent : "";
     }
 
+    private function isSupportedLineComment(File $phpcsFile, int $stackPtr): bool {
+        $content = $phpcsFile->getTokens()[$stackPtr]["content"] ?? "";
+        return CommentHelper::isLineComment($phpcsFile, $stackPtr) === true
+            && (str_starts_with($content, "//") === true || str_starts_with($content, "#") === true);
+    }
+
+    /**
+     * 隣接する // と # を一つの行コメントブロックとして処理する。
+     */
+    private function lineCommentBlockProcess(File $phpcsFile, int $stackPtr): void {
+        if ($this->isLineCommentBlockStart($phpcsFile, $stackPtr) === false) {
+            return;
+        }
+
+        $comments = $this->collectLineCommentBlock($phpcsFile, $stackPtr);
+        if ($comments === []) {
+            return;
+        }
+
+        $bodies = array_column($comments, "body");
+        if ($this->isCommentedOutCode($phpcsFile, $bodies) === true) {
+            $this->normalizeCommentedOutCodeBlock($phpcsFile, $comments);
+            return;
+        }
+
+        if (count($comments) === 1) {
+            $comment = $comments[0];
+            $body = trim($comment["body"]);
+            $replacement = $comment["content"];
+
+            if ($this->isCommentForStructure($phpcsFile, $comment["pointer"]) === true) {
+                $baseIndent = $this->getBaseIndent($phpcsFile, $stackPtr);
+                $replacement = "/**{$phpcsFile->eolChar}{$baseIndent} * {$body}{$phpcsFile->eolChar}{$baseIndent} */{$comment["eol"]}";
+            } elseif ($body !== "") {
+                $replacement = "// {$body}{$comment["eol"]}";
+            } else {
+                $replacement = "//{$comment["eol"]}";
+            }
+
+            $this->replaceCommentTokenIfChanged($phpcsFile, $comment["pointer"], $comment["content"], $replacement);
+            return;
+        }
+
+        $fixable = false;
+        $replacements = [];
+        foreach ($comments as $index => $comment) {
+            $body = trim($comment["body"]);
+            if ($index === 0) {
+                $replacement = "/**{$phpcsFile->eolChar} * {$body}{$phpcsFile->eolChar}";
+            } elseif ($index === array_key_last($comments)) {
+                $replacement = " * {$body}{$phpcsFile->eolChar} */{$comment["eol"]}";
+            } else {
+                $replacement = " * {$body}{$phpcsFile->eolChar}";
+            }
+
+            $replacements[$comment["pointer"]] = $replacement;
+            $fixable = $phpcsFile->addFixableError(
+                self::ERROR_MESSAGE,
+                $comment["pointer"],
+                "InvalidCommentFormat"
+            ) || $fixable;
+        }
+
+        if ($fixable === true) {
+            $phpcsFile->fixer->beginChangeset();
+            foreach ($replacements as $pointer => $replacement) {
+                $phpcsFile->fixer->replaceToken($pointer, $replacement);
+            }
+            $phpcsFile->fixer->endChangeset();
+        }
+    }
+
+    private function isLineCommentBlockStart(File $phpcsFile, int $stackPtr): bool {
+        $tokens = $phpcsFile->getTokens();
+        $currentLine = $tokens[$stackPtr]["line"];
+
+        for ($pointer = $stackPtr - 1; $pointer >= 0; $pointer--) {
+            if ($tokens[$pointer]["code"] === T_WHITESPACE) {
+                if (substr_count($tokens[$pointer]["content"], $phpcsFile->eolChar) > 1) {
+                    return true;
+                }
+                continue;
+            }
+
+            return $this->isSupportedLineComment($phpcsFile, $pointer) === false
+                || $tokens[$pointer]["line"] !== $currentLine - 1;
+        }
+
+        return true;
+    }
+
+    /**
+     * @return array<int, array{pointer: int, content: string, body: string, eol: string}>
+     */
+    private function collectLineCommentBlock(File $phpcsFile, int $stackPtr): array {
+        $tokens = $phpcsFile->getTokens();
+        $comments = [];
+        $previousLine = $tokens[$stackPtr]["line"] - 1;
+
+        for ($pointer = $stackPtr, $count = count($tokens); $pointer < $count; $pointer++) {
+            if ($tokens[$pointer]["code"] === T_WHITESPACE) {
+                if (substr_count($tokens[$pointer]["content"], $phpcsFile->eolChar) > 1) {
+                    break;
+                }
+                continue;
+            }
+
+            if ($this->isSupportedLineComment($phpcsFile, $pointer) === false
+                || $tokens[$pointer]["line"] !== $previousLine + 1
+            ) {
+                break;
+            }
+
+            $content = $tokens[$pointer]["content"];
+            $eol = str_ends_with($content, $phpcsFile->eolChar) ? $phpcsFile->eolChar : "";
+            $contentWithoutEol = $eol === "" ? $content : substr($content, 0, -strlen($eol));
+            $body = str_starts_with($contentWithoutEol, "//")
+                ? substr($contentWithoutEol, 2)
+                : substr($contentWithoutEol, 1);
+
+            $comments[] = [
+                "pointer" => $pointer,
+                "content" => $content,
+                "body" => $body,
+                "eol" => $eol,
+            ];
+            $previousLine = $tokens[$pointer]["line"];
+        }
+
+        return $comments;
+    }
+
+    /**
+     * @param array<int, array{pointer: int, content: string, body: string, eol: string}> $comments
+     */
+    private function normalizeCommentedOutCodeBlock(File $phpcsFile, array $comments): void {
+        $commonIndent = null;
+        foreach ($comments as $comment) {
+            if (trim($comment["body"]) === "") {
+                continue;
+            }
+
+            preg_match("/^[ \t]*/", $comment["body"], $matches);
+            $indentLength = strlen($matches[0] ?? "");
+            $commonIndent = $commonIndent === null ? $indentLength : min($commonIndent, $indentLength);
+        }
+        $commonIndent ??= 0;
+
+        $replacements = [];
+        foreach ($comments as $comment) {
+            $body = substr($comment["body"], min($commonIndent, strlen($comment["body"])));
+            $replacement = trim($body) === ""
+                ? "//{$comment["eol"]}"
+                : "// {$body}{$comment["eol"]}";
+
+            if ($replacement !== $comment["content"]) {
+                $replacements[$comment["pointer"]] = $replacement;
+            }
+        }
+
+        if ($replacements === []) {
+            return;
+        }
+
+        $fixable = false;
+        foreach (array_keys($replacements) as $pointer) {
+            $fixable = $phpcsFile->addFixableError(
+                self::ERROR_MESSAGE,
+                $pointer,
+                "InvalidCommentFormat"
+            ) || $fixable;
+        }
+
+        if ($fixable === true) {
+            $phpcsFile->fixer->beginChangeset();
+            foreach ($replacements as $pointer => $replacement) {
+                $phpcsFile->fixer->replaceToken($pointer, $replacement);
+            }
+            $phpcsFile->fixer->endChangeset();
+        }
+    }
+
+    private function replaceCommentTokenIfChanged(
+        File $phpcsFile,
+        int $pointer,
+        string $currentContent,
+        string $replacement
+    ): void {
+        if ($currentContent === $replacement) {
+            return;
+        }
+
+        $fix = $phpcsFile->addFixableError(
+            self::ERROR_MESSAGE,
+            $pointer,
+            "InvalidCommentFormat"
+        );
+        if ($fix === true) {
+            $phpcsFile->fixer->replaceToken($pointer, $replacement);
+        }
+    }
+
     /**
      * 構造 (class, interface, trait, enum) に対するコメントかどうかを判定する
      *
@@ -857,6 +880,7 @@ class CommentingFormatSniff implements Sniff {
                     T_ENUM,
                     T_FUNCTION,
                     T_ABSTRACT,
+                    T_CONST,
                 ],
                 true
             );
@@ -894,8 +918,6 @@ class CommentingFormatSniff implements Sniff {
      */
     private function isCommentedOutCode(File $phpcsFile, array $bodies): bool {
         $content = join("\n", $bodies);
-        $content = preg_replace('/[-=#*]{2,}/', '-', $content);
-        $content = preg_replace('/\d+/', '', $content);
         $content = trim($content);
 
         if ($content === '') {
@@ -957,6 +979,8 @@ class CommentingFormatSniff implements Sniff {
 
         $emptyTokens = [
             T_WHITESPACE              => true,
+            T_STRING                  => true,
+            T_STRING_CONCAT           => true,
             T_ENCAPSED_AND_WHITESPACE => true,
             T_NONE                    => true,
             T_COMMENT                 => true,
@@ -965,19 +989,68 @@ class CommentingFormatSniff implements Sniff {
 
         $numCode = 0;
         $numNonWhitespace = 0;
+        $numCodeKeywords = 0;
+        $hasVariable = false;
+        $hasStatementTerminator = false;
+        $hasCallParenthesis = false;
+        $hasScopeOpener = false;
+        $codeKeywordTokens = [
+            T_ABSTRACT,
+            T_CASE,
+            T_CATCH,
+            T_CLASS,
+            T_CONST,
+            T_DO,
+            T_ECHO,
+            T_ELSE,
+            T_ELSEIF,
+            T_ENUM,
+            T_FINALLY,
+            T_FOR,
+            T_FOREACH,
+            T_FUNCTION,
+            T_IF,
+            T_INCLUDE,
+            T_INCLUDE_ONCE,
+            T_INTERFACE,
+            T_NEW,
+            T_PRINT,
+            T_PRIVATE,
+            T_PROTECTED,
+            T_PUBLIC,
+            T_REQUIRE,
+            T_REQUIRE_ONCE,
+            T_RETURN,
+            T_STATIC,
+            T_SWITCH,
+            T_THROW,
+            T_TRAIT,
+            T_TRY,
+            T_WHILE,
+        ];
         for ($i = 0, $c = count($stringTokens); $i < $c; $i++) {
-            if (isset($emptyTokens[$stringTokens[$i]['code']]) === true) {
-                // comment-like
-            } elseif (isset(Tokens::$comparisonTokens[$stringTokens[$i]['code']]) === true
-                || isset(Tokens::$arithmeticTokens[$stringTokens[$i]['code']]) === true
-                || $stringTokens[$i]['code'] === T_GOTO_LABEL
+            $tokenCode = $stringTokens[$i]['code'];
+            if (isset($emptyTokens[$tokenCode]) === false
+                && isset(Tokens::$comparisonTokens[$tokenCode]) === false
+                && isset(Tokens::$arithmeticTokens[$tokenCode]) === false
+                && $tokenCode !== T_GOTO_LABEL
             ) {
-                $numCode++;
-            } else {
                 $numCode++;
             }
 
-            if ($stringTokens[$i]['code'] !== T_WHITESPACE) {
+            if (in_array($tokenCode, $codeKeywordTokens, true)) {
+                $numCodeKeywords++;
+            } elseif ($tokenCode === T_VARIABLE) {
+                $hasVariable = true;
+            } elseif ($tokenCode === T_SEMICOLON) {
+                $hasStatementTerminator = true;
+            } elseif ($tokenCode === T_OPEN_PARENTHESIS) {
+                $hasCallParenthesis = true;
+            } elseif ($tokenCode === T_OPEN_CURLY_BRACKET) {
+                $hasScopeOpener = true;
+            }
+
+            if ($tokenCode !== T_WHITESPACE) {
                 ++$numNonWhitespace;
             }
         }
@@ -986,11 +1059,15 @@ class CommentingFormatSniff implements Sniff {
             return false;
         }
 
-        if ($numNonWhitespace === 0) {
-            return false;
+        if ($numCodeKeywords >= 2
+            || ($numCodeKeywords >= 1 && ($hasStatementTerminator || $hasCallParenthesis || $hasScopeOpener))
+            || ($hasVariable && $hasStatementTerminator)
+            || ($hasCallParenthesis && $hasStatementTerminator)
+        ) {
+            return true;
         }
 
-        $percentCode = ceil((($numCode / $numNonWhitespace) * 100));
-        return $percentCode > $this->commentedOutCodePercentage;
+        $percentCode = ceil((($numCode / count($stringTokens)) * 100));
+        return $percentCode > self::COMMENTED_OUT_CODE_PERCENTAGE;
     }
 }
