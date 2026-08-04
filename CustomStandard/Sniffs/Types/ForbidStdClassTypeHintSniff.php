@@ -16,7 +16,7 @@ use PHP_CodeSniffer\Sniffs\Sniff;
  * - new stdClass()
  * - instanceof stdClass
  * - extends stdClass / implements stdClass
- * - FQCN形式 (\stdClass) および stdClass:: 静的アクセス
+ * - 名前空間付きクラス名（Foo\stdClass など）および stdClass:: 静的アクセス
  */
 class ForbidStdClassTypeHintSniff implements Sniff
 {
@@ -34,9 +34,9 @@ class ForbidStdClassTypeHintSniff implements Sniff
     ];
 
     /**
-     * T_STRING で型宣言コンテキストでない場合にスキップする前トークン一覧
+     * 型名トークンで型宣言コンテキストでない場合にスキップする前トークン一覧
      *
-     * @var list<int>
+     * @var list<int|string>
      */
     private const SKIP_PREV_TOKENS = [
         T_NEW,
@@ -54,9 +54,9 @@ class ForbidStdClassTypeHintSniff implements Sniff
     ];
 
     /**
-     * T_STRING で型宣言コンテキストでない場合にスキップする後トークン一覧
+     * 型名トークンで型宣言コンテキストでない場合にスキップする後トークン一覧
      *
-     * @var list<int>
+     * @var list<int|string>
      */
     private const SKIP_NEXT_TOKENS = [
         T_DOUBLE_COLON,
@@ -69,6 +69,9 @@ class ForbidStdClassTypeHintSniff implements Sniff
     {
         return [
             T_STRING,
+            T_NAME_QUALIFIED,
+            T_NAME_FULLY_QUALIFIED,
+            T_NAME_RELATIVE,
             T_DOC_COMMENT_OPEN_TAG,
         ];
     }
@@ -77,7 +80,11 @@ class ForbidStdClassTypeHintSniff implements Sniff
     {
         $tokens = $phpcsFile->getTokens();
 
-        if ($tokens[$stackPtr]['code'] === T_STRING) {
+        if (in_array(
+            $tokens[$stackPtr]['code'],
+            [T_STRING, T_NAME_QUALIFIED, T_NAME_FULLY_QUALIFIED, T_NAME_RELATIVE],
+            true,
+        )) {
             $this->processTypeHint($phpcsFile, $stackPtr);
         } else {
             $this->processDocComment($phpcsFile, $stackPtr);
@@ -91,7 +98,7 @@ class ForbidStdClassTypeHintSniff implements Sniff
     {
         $tokens = $phpcsFile->getTokens();
 
-        if ($tokens[$stackPtr]['content'] !== 'stdClass') {
+        if (in_array($tokens[$stackPtr]['content'], ['stdClass', '\\stdClass'], true) === false) {
             return;
         }
 
@@ -105,29 +112,6 @@ class ForbidStdClassTypeHintSniff implements Sniff
 
         if ($prevPtr !== false && in_array($tokens[$prevPtr]['code'], self::SKIP_PREV_TOKENS, true)) {
             return;
-        }
-
-        // 前トークンが T_NS_SEPARATOR の場合：
-        //   \stdClass（グローバルFQCN）→ 対象（T_NS_SEPARATOR ごと object に置換）
-        //   \Foo\stdClass 等（名前空間の一部）→ 除外
-        $nsSepPtr = null;
-        if ($prevPtr !== false && $tokens[$prevPtr]['code'] === T_NS_SEPARATOR) {
-            $beforeNsPtr = $phpcsFile->findPrevious(
-                [T_WHITESPACE],
-                $prevPtr - 1,
-                null,
-                true
-            );
-
-            if ($beforeNsPtr !== false
-                && in_array($tokens[$beforeNsPtr]['code'], [T_STRING, T_NS_SEPARATOR], true)
-            ) {
-                // Foo\stdClass / \Foo\stdClass の一部 → 除外
-                return;
-            }
-
-            // \stdClass のグローバルFQCN → T_NS_SEPARATOR ごと置換対象にする
-            $nsSepPtr = $prevPtr;
         }
 
         // 後の非空白トークンを取得してコンテキストを判断
@@ -149,15 +133,8 @@ class ForbidStdClassTypeHintSniff implements Sniff
         );
 
         if ($fix === true) {
-            if ($nsSepPtr !== null) {
-                // \stdClass → object（バックスラッシュも削除）
-                $phpcsFile->fixer->beginChangeset();
-                $phpcsFile->fixer->replaceToken($nsSepPtr, '');
-                $phpcsFile->fixer->replaceToken($stackPtr, 'object');
-                $phpcsFile->fixer->endChangeset();
-            } else {
-                $phpcsFile->fixer->replaceToken($stackPtr, 'object');
-            }
+            // PHPCS 4 tokenizes \stdClass as one T_NAME_FULLY_QUALIFIED token.
+            $phpcsFile->fixer->replaceToken($stackPtr, 'object');
         }
     }
 

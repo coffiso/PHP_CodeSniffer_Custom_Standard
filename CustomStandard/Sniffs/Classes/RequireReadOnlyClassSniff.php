@@ -4,6 +4,7 @@ namespace CustomStandard\Sniffs\Classes;
 
 use PHP_CodeSniffer\Files\File;
 use PHP_CodeSniffer\Sniffs\Sniff;
+use PHP_CodeSniffer\Util\Tokens;
 use SlevomatCodingStandard\Helpers\AttributeHelper;
 use SlevomatCodingStandard\Helpers\DocCommentHelper;
 use SlevomatCodingStandard\Helpers\PropertyHelper;
@@ -13,13 +14,22 @@ class RequireReadOnlyClassSniff implements Sniff {
      * プロパティの型宣言を表すトークンコードのリスト
      */
     private function getTypeTokens(): array {
-        return [
-            T_STRING,           // クラス名、インターフェース名、ビルトイン型 (int, string, bool, float, array, object, mixed, callable, iterable, void, never など)
-            T_NULLABLE,         // ? (nullable型)
-            T_NS_SEPARATOR,     // \ (名前空間区切り)
-            T_TYPE_UNION,       // | (union型)
-            T_TYPE_INTERSECTION, // & (intersection型)
-        ];
+        return array_merge(
+            array_keys(Tokens::NAME_TOKENS),
+            [
+                T_CALLABLE,
+                T_SELF,
+                T_PARENT,
+                T_FALSE,
+                T_TRUE,
+                T_NULL,
+                T_NULLABLE,
+                T_TYPE_UNION,
+                T_TYPE_INTERSECTION,
+                T_TYPE_OPEN_PARENTHESIS,
+                T_TYPE_CLOSE_PARENTHESIS,
+            ],
+        );
     }
 
     public function register() {
@@ -28,6 +38,9 @@ class RequireReadOnlyClassSniff implements Sniff {
             T_PUBLIC,
             T_PROTECTED,
             T_PRIVATE,
+            T_PUBLIC_SET,
+            T_PROTECTED_SET,
+            T_PRIVATE_SET,
         ];
     }
 
@@ -231,7 +244,10 @@ class RequireReadOnlyClassSniff implements Sniff {
 
         // staticプロパティはチェックしない
         $ptr = $stackPtr + 1;
-        while (isset($tokens[$ptr]["code"]) === true && $tokens[$ptr]["code"] !== T_STRING) {
+        while (
+            isset($tokens[$ptr]["code"]) === true
+            && isset(Tokens::NAME_TOKENS[$tokens[$ptr]["code"]]) === false
+        ) {
             if ($tokens[$ptr]["code"] === T_STATIC) {
                 return;
             }
@@ -365,7 +381,7 @@ class RequireReadOnlyClassSniff implements Sniff {
                 // プロパティかどうか確認
                 if (PropertyHelper::isProperty(phpcsFile: $phpcsFile, variablePointer: $ptr, promoted: true)) {
                     // アクセス修飾子を見つける
-                    $modifierPtr = $phpcsFile->findPrevious([T_PUBLIC, T_PROTECTED, T_PRIVATE], $ptr - 1);
+                    $modifierPtr = $phpcsFile->findPrevious(array_keys(Tokens::SCOPE_MODIFIERS), $ptr - 1);
 
                     if ($modifierPtr !== false) {
                         $isStatic = false;

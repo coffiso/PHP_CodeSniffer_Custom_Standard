@@ -854,6 +854,9 @@ class CommentingFormatSniff implements Sniff {
                     T_PUBLIC,
                     T_PROTECTED,
                     T_PRIVATE,
+                    T_PUBLIC_SET,
+                    T_PROTECTED_SET,
+                    T_PRIVATE_SET,
                     T_STATIC,
                     T_FINAL,
                     T_READONLY,
@@ -924,10 +927,9 @@ class CommentingFormatSniff implements Sniff {
             return false;
         }
 
-        // Some File implementations (e.g. DummyFile) may not have tokenizerType set.
-        if (isset($phpcsFile->tokenizerType) && $phpcsFile->tokenizerType === 'PHP') {
-            $content = '<?php ' . $content . ' ?>';
-        }
+        // PHPCS 4 only supports the PHP tokenizer. Wrap the extracted comment
+        // body in PHP tags so it is tokenized as PHP code instead of inline HTML.
+        $content = '<?php ' . $content . ' ?>';
 
         $oldErrors = ini_get('error_reporting');
         ini_set('error_reporting', 0);
@@ -966,8 +968,8 @@ class CommentingFormatSniff implements Sniff {
             --$numTokens;
         }
 
-        if ($phpcsFile->tokenizerType === 'PHP') {
-            if (isset(Tokens::$emptyTokens[$stringTokens[($numTokens - 1)]['code']]) === false) {
+        if ($numTokens > 0) {
+            if (isset(Tokens::EMPTY_TOKENS[$stringTokens[($numTokens - 1)]['code']]) === false) {
                 return false;
             }
 
@@ -985,7 +987,7 @@ class CommentingFormatSniff implements Sniff {
             T_NONE                    => true,
             T_COMMENT                 => true,
         ];
-        $emptyTokens += Tokens::$phpcsCommentTokens;
+        $emptyTokens += Tokens::PHPCS_ANNOTATION_TOKENS;
 
         $numCode = 0;
         $numNonWhitespace = 0;
@@ -1018,6 +1020,9 @@ class CommentingFormatSniff implements Sniff {
             T_PRIVATE,
             T_PROTECTED,
             T_PUBLIC,
+            T_PUBLIC_SET,
+            T_PROTECTED_SET,
+            T_PRIVATE_SET,
             T_REQUIRE,
             T_REQUIRE_ONCE,
             T_RETURN,
@@ -1031,9 +1036,10 @@ class CommentingFormatSniff implements Sniff {
         for ($i = 0, $c = count($stringTokens); $i < $c; $i++) {
             $tokenCode = $stringTokens[$i]['code'];
             if (isset($emptyTokens[$tokenCode]) === false
-                && isset(Tokens::$comparisonTokens[$tokenCode]) === false
-                && isset(Tokens::$arithmeticTokens[$tokenCode]) === false
+                && isset(Tokens::COMPARISON_TOKENS[$tokenCode]) === false
+                && isset(Tokens::ARITHMETIC_TOKENS[$tokenCode]) === false
                 && $tokenCode !== T_GOTO_LABEL
+                && $tokenCode !== T_GOTO_COLON
             ) {
                 $numCode++;
             }

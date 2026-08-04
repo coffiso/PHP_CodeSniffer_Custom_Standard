@@ -60,7 +60,11 @@ class ForbiddenPublicPropertySniff implements Sniff
             return;
         }
 
-        if ($scopeModifierToken['code'] === T_PROTECTED || $scopeModifierToken['code'] === T_PRIVATE) {
+        if (in_array(
+            $scopeModifierToken['code'],
+            [T_PROTECTED, T_PROTECTED_SET, T_PRIVATE, T_PRIVATE_SET],
+            true,
+        )) {
             return;
         }
 
@@ -85,7 +89,11 @@ class ForbiddenPublicPropertySniff implements Sniff
      */
     private function getPropertyScopeModifier(File $file, int $position): ?array
     {
-        $scopeModifierPosition = TokenHelper::findPrevious($file, array_merge([T_VAR], Tokens::$scopeModifiers), $position - 1);
+        $scopeModifierPosition = TokenHelper::findPrevious(
+            $file,
+            array_merge([T_VAR], array_keys(Tokens::SCOPE_MODIFIERS)),
+            $position - 1,
+        );
         if ($scopeModifierPosition === null) {
             return null;
         }

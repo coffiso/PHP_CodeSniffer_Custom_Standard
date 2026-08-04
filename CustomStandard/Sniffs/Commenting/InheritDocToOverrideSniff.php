@@ -270,6 +270,9 @@ class InheritDocToOverrideSniff implements Sniff {
             T_PUBLIC,
             T_PROTECTED,
             T_PRIVATE,
+            T_PUBLIC_SET,
+            T_PROTECTED_SET,
+            T_PRIVATE_SET,
             T_STATIC,
             T_FINAL,
             T_READONLY,
@@ -377,6 +380,9 @@ class InheritDocToOverrideSniff implements Sniff {
             T_PUBLIC,
             T_PROTECTED,
             T_PRIVATE,
+            T_PUBLIC_SET,
+            T_PROTECTED_SET,
+            T_PRIVATE_SET,
             T_STATIC,
             T_FINAL,
             T_READONLY,
@@ -403,6 +409,8 @@ class InheritDocToOverrideSniff implements Sniff {
             T_CALLABLE,
             T_OPEN_PARENTHESIS,
             T_CLOSE_PARENTHESIS,
+            T_TYPE_OPEN_PARENTHESIS,
+            T_TYPE_CLOSE_PARENTHESIS,
         ];
 
         $numTokens = count($tokens);
